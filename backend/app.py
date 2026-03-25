@@ -57,6 +57,11 @@ with app.app_context():
 def index():
     return {"message": "SmartAttend AI API is running"}
 
+
+@app.route('/healthz')
+def healthz():
+    return {"status": "ok"}, 200
+
 # GLOBAL ERROR HANDLER
 @app.errorhandler(Exception)
 def handle_error(e):
@@ -78,9 +83,11 @@ if __name__ == '__main__':
     except Exception:
         pass
 
+    port = int(os.environ.get('PORT', 5000))
+
     print("==========================================")
     print("SmartAttend AI Backend is LIVE")
-    print("Port: 5000 | Mode: High Stability")
+    print(f"Port: {port} | Mode: High Stability")
     print("==========================================")
 
     # Proactive AI Model Pre-loader
@@ -103,8 +110,11 @@ if __name__ == '__main__':
         except Exception as e:
             print(f"AI Cache Note: {e}")
 
-    import threading
-    threading.Thread(target=preload_models, daemon=True).start()
+    # Render free instances are memory-constrained, so skip heavy model warm-up there.
+    if not os.environ.get('RENDER'):
+        import threading
+        threading.Thread(target=preload_models, daemon=True).start()
+    else:
+        print("Skipping AI warm-up on Render to reduce startup memory usage.")
 
-    port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, port=port, threaded=True, host='0.0.0.0')
