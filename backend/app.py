@@ -106,4 +106,5 @@ if __name__ == '__main__':
     import threading
     threading.Thread(target=preload_models, daemon=True).start()
 
-    app.run(debug=False, port=5000, threaded=True, host='0.0.0.0')
+    port = int(os.environ.get('PORT', 5000))
+    app.run(debug=False, port=port, threaded=True, host='0.0.0.0')
