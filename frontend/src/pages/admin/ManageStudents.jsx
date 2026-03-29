@@ -311,7 +311,7 @@ const ManageStudents = () => {
 
       <AnimatePresence>
         {showAddModal && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-6">
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[140] bg-black/80 backdrop-blur-sm flex items-center justify-center p-6">
             <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} className="bg-slate-900 border border-white/10 rounded-[32px] w-full max-w-md p-8 relative max-h-[90vh] overflow-y-auto custom-scrollbar">
               <button onClick={() => setShowAddModal(false)} className="absolute top-6 right-6 p-2 text-slate-500 hover:text-white"><X size={20} /></button>
               <h3 className="text-xl font-bold mb-6 font-outfit text-white">New Student</h3>
@@ -372,7 +372,7 @@ const ManageStudents = () => {
         )}
 
         {showEditModal && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-6">
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[140] bg-black/80 backdrop-blur-sm flex items-center justify-center p-6">
             <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} className="bg-slate-900 border border-white/10 rounded-[32px] w-full max-w-md p-8 relative max-h-[90vh] overflow-y-auto custom-scrollbar">
               <button 
                 onClick={() => {
@@ -447,7 +447,7 @@ const ManageStudents = () => {
         )}
 
         {showFaceModal && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[60] bg-black/90 backdrop-blur-xl flex items-center justify-center p-6">
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[150] bg-black/90 backdrop-blur-xl flex items-center justify-center p-6">
             <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="bg-slate-900 border border-white/10 rounded-[40px] w-full max-w-sm p-8 flex flex-col items-center">
               <h3 className="text-lg font-bold mb-2 font-outfit uppercase tracking-widest text-cyan-400">Enroll Face</h3>
               <p className="text-[10px] text-slate-500 mb-8 font-black uppercase tracking-widest text-center text-white">
@@ -511,7 +511,7 @@ const ManageStudents = () => {
           </motion.div>
         )}
       </AnimatePresence>
-      <Navbar role="admin" />
+      {!showAddModal && !showEditModal && !showFaceModal && <Navbar role="admin" />}
     </div>
   );
 };
