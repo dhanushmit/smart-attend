@@ -30,6 +30,25 @@ const AdvisorReports = () => {
     fetchHistory();
   }, [timeframe]);
 
+  const downloadBlob = async (blob, filename, mimeType) => {
+    const file = new File([blob], filename, { type: mimeType });
+
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: filename });
+      return;
+    }
+
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', filename);
+    link.setAttribute('target', '_blank');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => window.URL.revokeObjectURL(url), 2000);
+  };
+
   const handleExport = async (format) => {
     try {
       const token = localStorage.getItem('token');
@@ -40,13 +59,11 @@ const AdvisorReports = () => {
       const mime = format === 'pdf'
         ? 'application/pdf'
         : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-      const url = window.URL.createObjectURL(new Blob([response.data], { type: mime }));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `Advisor_Report_${timeframe}.${format === 'pdf' ? 'pdf' : 'xlsx'}`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
+      await downloadBlob(
+        new Blob([response.data], { type: mime }),
+        `Advisor_Report_${timeframe}.${format === 'pdf' ? 'pdf' : 'xlsx'}`,
+        mime
+      );
     } catch (err) {
       alert(`${format.toUpperCase()} export failed`);
     }

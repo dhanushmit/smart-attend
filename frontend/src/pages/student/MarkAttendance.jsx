@@ -22,11 +22,31 @@ const MarkAttendance = () => {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        await videoRef.current.play().catch(() => {});
       }
     } catch (err) {
       setError("Camera access denied.");
       setStep('error');
     }
+  };
+
+  const waitForVideoFrame = async (video) => {
+    if (!video) return false;
+    if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
+      return true;
+    }
+
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => resolve(false), 2500);
+      const onReady = () => {
+        if (video.videoWidth > 0 && video.videoHeight > 0) {
+          clearTimeout(timeout);
+          video.removeEventListener('loadeddata', onReady);
+          resolve(true);
+        }
+      };
+      video.addEventListener('loadeddata', onReady);
+    });
   };
 
   const captureAndVerify = async () => {
@@ -35,9 +55,23 @@ const MarkAttendance = () => {
     
     try {
       const video = videoRef.current;
+      const ready = await waitForVideoFrame(video);
+      if (!ready) {
+        setError('Camera frame not ready. Hold still and try again.');
+        setStep('error');
+        setIsVerifying(false);
+        return;
+      }
+
       const canvas = document.createElement('canvas');
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
+      if (!canvas.width || !canvas.height) {
+        setError('Camera image not available. Please retry.');
+        setStep('error');
+        setIsVerifying(false);
+        return;
+      }
       const ctx = canvas.getContext('2d');
       const burstImages = [];
       for (let i = 0; i < 4; i++) {
@@ -52,7 +86,7 @@ const MarkAttendance = () => {
       
       // Phase 1: Verify Face
       const response = await axios.post(`${API_BASE}/attendance/verify-face`, 
-        { images: burstImages },
+        { images: burstImages, image: burstImages[0] || null },
         { headers: { Authorization: `Bearer ${token}` } }
       );
 

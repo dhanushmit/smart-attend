@@ -31,6 +31,25 @@ const AttendanceHistory = () => {
         fetchHistory();
     }, [timeframe]);
 
+    const downloadBlob = async (blob, filename, mimeType) => {
+        const file = new File([blob], filename, { type: mimeType });
+
+        if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({ files: [file], title: filename });
+            return;
+        }
+
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', filename);
+        link.setAttribute('target', '_blank');
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => window.URL.revokeObjectURL(url), 2000);
+    };
+
     const handleExport = async (format) => {
         const token = localStorage.getItem('token');
         if (format === 'xlsx') {
@@ -39,13 +58,11 @@ const AttendanceHistory = () => {
                     headers: { Authorization: `Bearer ${token}` },
                     responseType: 'blob'
                 });
-                const url = window.URL.createObjectURL(new Blob([response.data]));
-                const link = document.createElement('a');
-                link.href = url;
-                link.setAttribute('download', `Attendance_Report_${timeframe}.xlsx`);
-                document.body.appendChild(link);
-                link.click();
-                link.remove();
+                await downloadBlob(
+                  new Blob([response.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+                  `Attendance_Report_${timeframe}.xlsx`,
+                  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                );
             } catch (err) {
                 alert("Export failed");
             }
@@ -55,13 +72,11 @@ const AttendanceHistory = () => {
                     headers: { Authorization: `Bearer ${token}` },
                     responseType: 'blob'
                 });
-                const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
-                const link = document.createElement('a');
-                link.href = url;
-                link.setAttribute('download', `Attendance_Report_${timeframe}.pdf`);
-                document.body.appendChild(link);
-                link.click();
-                link.remove();
+                await downloadBlob(
+                  new Blob([response.data], { type: 'application/pdf' }),
+                  `Attendance_Report_${timeframe}.pdf`,
+                  'application/pdf'
+                );
             } catch (err) {
                 alert("PDF export failed");
             }
