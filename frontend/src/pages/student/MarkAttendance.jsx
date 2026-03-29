@@ -8,6 +8,7 @@ const MarkAttendance = () => {
   const [step, setStep] = useState('camera'); // 'camera', 'success', 'error'
   const [isVerifying, setIsVerifying] = useState(false);
   const [error, setError] = useState('');
+  const [debugInfo, setDebugInfo] = useState(null);
   const videoRef = useRef(null);
   const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000';
 
@@ -52,6 +53,7 @@ const MarkAttendance = () => {
   const captureAndVerify = async () => {
     setIsVerifying(true);
     setError('');
+    setDebugInfo(null);
     
     try {
       const video = videoRef.current;
@@ -89,6 +91,7 @@ const MarkAttendance = () => {
         { images: burstImages, image: burstImages[0] || null },
         { headers: { Authorization: `Bearer ${token}` } }
       );
+      setDebugInfo(response.data?.debug || null);
 
       if (response.data.verified) {
           // Proceed directly to mark without GPS as requested
@@ -124,6 +127,7 @@ const MarkAttendance = () => {
         setIsVerifying(false);
       }
     } catch (err) {
+      setDebugInfo(err.response?.data?.debug || null);
       setError(err.response?.data?.msg || err.response?.data?.message || "Verification failed.");
       setStep('error');
       setIsVerifying(false);
@@ -166,6 +170,42 @@ const MarkAttendance = () => {
                   {isVerifying ? "Verifying..." : <><Shield size={24} /> BURST SCAN</>}
                 </button>
             </div>
+
+            {debugInfo && (
+              <GlassCard className="p-4 border-white/10">
+                <p className="text-[10px] uppercase tracking-[0.25em] font-black text-cyan-400 mb-3">Debug Panel</p>
+                <div className="grid grid-cols-2 gap-3 text-left">
+                  <div className="rounded-2xl bg-white/5 p-3">
+                    <p className="text-[9px] uppercase text-slate-500 font-black">Best Distance</p>
+                    <p className="text-sm font-bold text-white">{debugInfo.best_distance ?? '-'}</p>
+                  </div>
+                  <div className="rounded-2xl bg-white/5 p-3">
+                    <p className="text-[9px] uppercase text-slate-500 font-black">Threshold</p>
+                    <p className="text-sm font-bold text-white">{debugInfo.threshold ?? '-'}</p>
+                  </div>
+                  <div className="rounded-2xl bg-white/5 p-3">
+                    <p className="text-[9px] uppercase text-slate-500 font-black">Frames Used</p>
+                    <p className="text-sm font-bold text-white">{debugInfo.frames_used ?? 0}/{debugInfo.frames_requested ?? 0}</p>
+                  </div>
+                  <div className="rounded-2xl bg-white/5 p-3">
+                    <p className="text-[9px] uppercase text-slate-500 font-black">Stored Profiles</p>
+                    <p className="text-sm font-bold text-white">{debugInfo.stored_profiles ?? 0}</p>
+                  </div>
+                </div>
+                {Array.isArray(debugInfo.frame_distances) && (
+                  <div className="mt-3 rounded-2xl bg-white/5 p-3 text-left">
+                    <p className="text-[9px] uppercase text-slate-500 font-black mb-2">Frame Distances</p>
+                    <p className="text-xs text-slate-300 break-all">{debugInfo.frame_distances.map((value, index) => `#${index + 1}:${value ?? 'x'}`).join('  ')}</p>
+                  </div>
+                )}
+                {debugInfo.profile_image && (
+                  <div className="mt-3 rounded-2xl bg-white/5 p-3 text-left">
+                    <p className="text-[9px] uppercase text-slate-500 font-black mb-2">Stored Face Preview</p>
+                    <img src={debugInfo.profile_image} alt="Stored face" className="w-24 h-24 rounded-2xl object-cover border border-white/10" />
+                  </div>
+                )}
+              </GlassCard>
+            )}
           </motion.div>
         )}
 
@@ -176,6 +216,13 @@ const MarkAttendance = () => {
             </div>
             <h3 className="text-3xl font-black text-white uppercase tracking-tighter">SUCCESS!</h3>
             <p className="text-slate-400 font-medium">Attendance marked instantly.</p>
+            {debugInfo && (
+              <GlassCard className="w-full max-w-sm p-4 text-left">
+                <p className="text-[10px] uppercase tracking-[0.25em] font-black text-cyan-400 mb-2">Debug Panel</p>
+                <p className="text-xs text-slate-300">Distance: {debugInfo.best_distance ?? '-'} / Threshold: {debugInfo.threshold ?? '-'}</p>
+                <p className="text-xs text-slate-300 mt-1">Frames: {debugInfo.frames_used ?? 0}/{debugInfo.frames_requested ?? 0}</p>
+              </GlassCard>
+            )}
             <button
                onClick={() => window.location.href = '/student/dashboard'}
                className="mt-8 px-12 py-4 bg-white/5 rounded-3xl text-sm font-black text-white uppercase tracking-widest border border-white/10"
@@ -192,6 +239,26 @@ const MarkAttendance = () => {
               <AlertCircle size={48} className="text-red-500" />
             </div>
             <h3 className="text-2xl font-bold text-white">{error}</h3>
+            {debugInfo && (
+              <GlassCard className="w-full max-w-sm p-4 text-left">
+                <p className="text-[10px] uppercase tracking-[0.25em] font-black text-amber-400 mb-3">Debug Panel</p>
+                <div className="space-y-2 text-xs text-slate-300">
+                  <p>Distance: <span className="font-bold text-white">{debugInfo.best_distance ?? '-'}</span></p>
+                  <p>Threshold: <span className="font-bold text-white">{debugInfo.threshold ?? '-'}</span></p>
+                  <p>Frames Used: <span className="font-bold text-white">{debugInfo.frames_used ?? 0}/{debugInfo.frames_requested ?? 0}</span></p>
+                  <p>Stored Profiles: <span className="font-bold text-white">{debugInfo.stored_profiles ?? 0}</span></p>
+                  {Array.isArray(debugInfo.frame_distances) && (
+                    <p>Frame Scores: <span className="font-bold text-white break-all">{debugInfo.frame_distances.map((value, index) => `#${index + 1}:${value ?? 'x'}`).join('  ')}</span></p>
+                  )}
+                </div>
+                {debugInfo.profile_image && (
+                  <div className="mt-3">
+                    <p className="text-[9px] uppercase text-slate-500 font-black mb-2">Stored Face Preview</p>
+                    <img src={debugInfo.profile_image} alt="Stored face" className="w-24 h-24 rounded-2xl object-cover border border-white/10" />
+                  </div>
+                )}
+              </GlassCard>
+            )}
             <button
               onClick={() => setStep('camera')}
               className="mt-6 px-10 py-5 bg-white/5 border border-white/10 rounded-3xl text-white font-black uppercase tracking-widest flex items-center gap-3"

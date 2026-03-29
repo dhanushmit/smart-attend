@@ -82,6 +82,10 @@ def verify_face():
 
         stored_embeddings = []
 
+        profile_image = None
+        if student.reference_image_path:
+            profile_image = f"{request.host_url.rstrip('/')}/uploads/{student.reference_image_path}"
+
         if student_embs:
             for record in student_embs:
                 emb = np.array(json.loads(record.embedding), dtype=np.float32)
@@ -114,42 +118,67 @@ def verify_face():
 
         best_distance = None
         valid_frames = 0
+        frame_distances = []
         for image in captured_images:
             new_embedding, success = get_face_embedding(image)
             if not success or not new_embedding:
+                frame_distances.append(None)
                 continue
 
             new_emb = np.array(new_embedding, dtype=np.float32)
             norm = np.linalg.norm(new_emb)
             if norm == 0:
+                frame_distances.append(None)
                 continue
             new_emb = new_emb / norm
             frame_distance = min(float(np.linalg.norm(new_emb - emb)) for emb in stored_embeddings)
+            frame_distances.append(round(frame_distance, 4))
             valid_frames += 1
             if best_distance is None or frame_distance < best_distance:
                 best_distance = frame_distance
 
         if best_distance is None or valid_frames == 0:
-            return jsonify({"msg": "Face detection failed. Keep full face in frame and retry.", "verified": False}), 400
+            return jsonify({
+                "msg": "Face detection failed. Keep full face in frame and retry.",
+                "verified": False,
+                "debug": {
+                    "frames_requested": len(captured_images),
+                    "frames_used": valid_frames,
+                    "stored_profiles": len(stored_embeddings),
+                    "frame_distances": frame_distances,
+                    "profile_image": profile_image
+                }
+            }), 400
 
         # Burst verification lets us stay slightly strict while avoiding false rejects.
         l2_threshold = 1.08
         is_match = best_distance <= l2_threshold
         confidence = max(0.0, min(100.0, (1.0 - (best_distance / 1.55)) * 100.0))
+        debug_data = {
+            "best_distance": round(best_distance, 4),
+            "threshold": l2_threshold,
+            "frames_requested": len(captured_images),
+            "frames_used": valid_frames,
+            "stored_profiles": len(stored_embeddings),
+            "frame_distances": frame_distances,
+            "profile_image": profile_image
+        }
 
         if is_match:
             return jsonify({
                 "msg": f"Verified ({confidence:.0f}%)",
                 "verified": True,
                 "distance": round(best_distance, 4),
-                "frames_used": valid_frames
+                "frames_used": valid_frames,
+                "debug": debug_data
             }), 200
 
         return jsonify({
             "msg": f"Face mismatched (distance: {best_distance:.3f}, threshold: {l2_threshold:.2f})",
             "verified": False,
             "distance": round(best_distance, 4),
-            "frames_used": valid_frames
+            "frames_used": valid_frames,
+            "debug": debug_data
         }), 400
 
     except ValueError:
