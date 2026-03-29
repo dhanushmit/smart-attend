@@ -485,6 +485,19 @@ def update_delete_student(id):
                     except: pass
             
             student.reference_image_path = filename
+
+            try:
+                source_image = img_data if img_data else file_path
+                embedding, success = get_face_embedding(source_image)
+                if success and embedding:
+                    FaceEmbedding.query.filter_by(student_id=student.id).delete()
+                    db.session.add(FaceEmbedding(
+                        student_id=student.id,
+                        embedding=json.dumps(embedding),
+                        label="Profile Update"
+                    ))
+            except Exception as embed_err:
+                print(f"Student image update embedding warning: {embed_err}")
             
         db.session.commit()
         return jsonify({"msg": "Student updated successfully"})

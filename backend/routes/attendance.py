@@ -113,6 +113,27 @@ def verify_face():
                 return jsonify({"msg": "Stored reference face is corrupted. Re-enroll this student profile.", "verified": False}), 400
             stored_embeddings.append(emb / emb_norm)
 
+        # Also compare with the latest reference image embedding so stale DB vectors don't break real users.
+        if student.reference_image_path:
+            ref_path = os.path.join(current_app.config['UPLOAD_FOLDER'], student.reference_image_path)
+            if os.path.exists(ref_path):
+                try:
+                    ref_res = DeepFace.represent(
+                        img_path=ref_path,
+                        model_name="ArcFace",
+                        detector_backend="retinaface",
+                        align=True,
+                        enforce_detection=False
+                    )
+                    if ref_res:
+                        ref_face = max(ref_res, key=lambda x: x["facial_area"]["w"] * x["facial_area"]["h"])
+                        ref_emb = np.array(ref_face["embedding"], dtype=np.float32)
+                        ref_norm = np.linalg.norm(ref_emb)
+                        if ref_norm != 0:
+                            stored_embeddings.append(ref_emb / ref_norm)
+                except Exception as ref_err:
+                    print(f"Reference image embedding refresh warning: {ref_err}")
+
         if not stored_embeddings:
             return jsonify({"msg": "No usable face profiles found. Re-enroll the student face.", "verified": False}), 400
 

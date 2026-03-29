@@ -1,16 +1,21 @@
 import cv2
 import numpy as np
 import base64
+import os
 from deepface import DeepFace
 
 
 def _decode_image(img_source):
     if isinstance(img_source, str):
-        if ',' in img_source:
-            img_source = img_source.split(',')[1]
-        img_data = base64.b64decode(img_source)
-        nparr = np.frombuffer(img_data, np.uint8)
-        return cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if os.path.exists(img_source):
+            return cv2.imread(img_source)
+        if img_source.startswith('data:image') or ',' in img_source:
+            if ',' in img_source:
+                img_source = img_source.split(',')[1]
+            img_data = base64.b64decode(img_source)
+            nparr = np.frombuffer(img_data, np.uint8)
+            return cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        return None
 
     if isinstance(img_source, bytes):
         nparr = np.frombuffer(img_source, np.uint8)
