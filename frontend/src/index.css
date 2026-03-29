@@ -18,6 +18,14 @@
       radial-gradient(circle at 10% 20%, rgba(6, 182, 212, 0.05) 0%, transparent 40%),
       radial-gradient(circle at 90% 80%, rgba(79, 70, 229, 0.05) 0%, transparent 40%),
       #020617;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+  }
+
+  html {
+    overscroll-behavior-y: none;
+    overflow-x: hidden;
   }
 
   h1, h2, h3, h4, .font-heading {
@@ -76,4 +84,3 @@
 ::-webkit-scrollbar-thumb {
   @apply bg-slate-800 rounded-full hover:bg-slate-700;
 }
-

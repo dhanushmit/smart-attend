@@ -15,8 +15,13 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Spacer, Paragraph
 
 admin_bp = Blueprint('admin', __name__)
-API_BASE_URL = "http://127.0.0.1:5000"
 DUPLICATE_FACE_THRESHOLD = 0.80
+
+
+def _upload_url(filename):
+    if not filename:
+        return None
+    return f"{request.host_url.rstrip('/')}/uploads/{filename}"
 
 
 def _all_session_dates(class_id=None):
@@ -309,7 +314,7 @@ def manage_students():
         students = Student.query.all()
         result = []
         for s in students:
-            image_url = f"{API_BASE_URL}/uploads/{s.reference_image_path}" if s.reference_image_path else None
+            image_url = _upload_url(s.reference_image_path)
             metrics = _student_metrics(s)
             result.append({
                 "id": s.id,

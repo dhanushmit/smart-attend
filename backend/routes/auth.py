@@ -4,7 +4,12 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from models import db, User
 
 auth_bp = Blueprint('auth', __name__)
-API_BASE_URL = "http://127.0.0.1:5000"
+
+
+def _upload_url(filename):
+    if not filename:
+        return None
+    return f"{request.host_url.rstrip('/')}/uploads/{filename}"
 
 @auth_bp.route('/register', methods=['POST'])
 def register():
@@ -36,7 +41,7 @@ def login():
             if user.role == 'student' and user.student_profile and len(user.student_profile) > 0:
                 s = user.student_profile[0]
                 if s.reference_image_path:
-                    img = f"{API_BASE_URL}/uploads/{s.reference_image_path}"
+                    img = _upload_url(s.reference_image_path)
             
             access_token = create_access_token(identity=str(user.id))
             return jsonify({
