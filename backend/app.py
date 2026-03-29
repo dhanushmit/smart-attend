@@ -55,57 +55,48 @@ with app.app_context():
     db.create_all()
 
     def seed_defaults():
-        if User.query.filter_by(role='admin').first():
-            return
+        defaults = [
+            ('admin', 'Admin@123', 'admin', 'System Admin', 'admin@smartattend.local'),
+            ('advisor', 'Advisor@123', 'advisor', 'Class Advisor', 'advisor@smartattend.local'),
+            ('student', 'Student@123', 'student', 'Student User', 'student@smartattend.local'),
+            ('dhanush', 'Dhanush@123', 'student', 'Dhanush S', 'dhanush@smartattend.local'),
+            ('Chiranjeevi', 'Chiru@123', 'student', 'Chiranjeevi', 'chiranjeevi@smartattend.local'),
+        ]
 
-        admin = User(
-            username='admin',
-            password_hash=generate_password_hash('Admin@123'),
-            role='admin',
-            fullname='System Admin',
-            email='admin@smartattend.local'
-        )
-        advisor = User(
-            username='advisor',
-            password_hash=generate_password_hash('Advisor@123'),
-            role='advisor',
-            fullname='Class Advisor',
-            email='advisor@smartattend.local'
-        )
-        student = User(
-            username='student',
-            password_hash=generate_password_hash('Student@123'),
-            role='student',
-            fullname='Student User',
-            email='student@smartattend.local'
-        )
-        dhanush = User(
-            username='dhanush',
-            password_hash=generate_password_hash('Dhanush@123'),
-            role='student',
-            fullname='Dhanush S',
-            email='dhanush@smartattend.local'
-        )
-        chiru = User(
-            username='Chiranjeevi',
-            password_hash=generate_password_hash('Chiru@123'),
-            role='student',
-            fullname='Chiranjeevi',
-            email='chiranjeevi@smartattend.local'
-        )
+        users = {}
+        for username, password, role, fullname, email in defaults:
+            user = User.query.filter_by(username=username).first()
+            if not user:
+                user = User(username=username)
+                db.session.add(user)
+            user.password_hash = generate_password_hash(password)
+            user.role = role
+            user.fullname = fullname
+            user.email = email
+            users[username] = user
 
-        db.session.add_all([admin, advisor, student, dhanush, chiru])
         db.session.flush()
 
-        default_class = Class(name='CSE-A', advisor_id=advisor.id)
-        db.session.add(default_class)
-        db.session.flush()
+        default_class = Class.query.filter_by(name='CSE-A').first()
+        if not default_class:
+            default_class = Class(name='CSE-A')
+            db.session.add(default_class)
+            db.session.flush()
+        default_class.advisor_id = users['advisor'].id
 
-        db.session.add_all([
-            Student(user_id=student.id, class_id=default_class.id, roll_no='2024ST001'),
-            Student(user_id=dhanush.id, class_id=default_class.id, roll_no='323UIT005'),
-            Student(user_id=chiru.id, class_id=default_class.id, roll_no='004'),
-        ])
+        student_defaults = [
+            (users['student'], '2024ST001'),
+            (users['dhanush'], '323UIT005'),
+            (users['Chiranjeevi'], '004'),
+        ]
+        for user, roll_no in student_defaults:
+            student = Student.query.filter_by(user_id=user.id).first()
+            if not student:
+                student = Student(user_id=user.id)
+                db.session.add(student)
+            student.class_id = default_class.id
+            student.roll_no = roll_no
+
         db.session.commit()
 
     seed_defaults()
