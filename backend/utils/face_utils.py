@@ -19,44 +19,113 @@ def _decode_image(img_source):
     return img_source
 
 
+def _pick_primary_face(face_results):
+    if not face_results:
+        return None
+
+    def score(face):
+        area = face.get("facial_area", {}) or {}
+        width = max(int(area.get("w", 0)), 0)
+        height = max(int(area.get("h", 0)), 0)
+        confidence = float(face.get("confidence", 0) or 0)
+        return (width * height) * max(confidence, 0.5)
+
+    return max(face_results, key=score)
+
+
+def _crop_face_from_area(img, facial_area, target_size=(512, 512), margin_ratio=0.35):
+    h, w = img.shape[:2]
+    x = int(facial_area.get("x", 0))
+    y = int(facial_area.get("y", 0))
+    fw = int(facial_area.get("w", 0))
+    fh = int(facial_area.get("h", 0))
+
+    if fw <= 0 or fh <= 0:
+        return None
+
+    mx = int(fw * margin_ratio)
+    my = int(fh * margin_ratio)
+
+    x1 = max(0, x - mx)
+    y1 = max(0, y - my)
+    x2 = min(w, x + fw + mx)
+    y2 = min(h, y + fh + my)
+
+    cropped = img[y1:y2, x1:x2]
+    if cropped.size == 0:
+        return None
+
+    return cv2.resize(cropped, target_size, interpolation=cv2.INTER_CUBIC)
+
+
+def analyze_face(img_source, target_size=(512, 512)):
+    """Return embedding, cropped face bytes, and a simple quality score."""
+    try:
+        img = _decode_image(img_source)
+        if img is None:
+            return None
+
+        faces = DeepFace.extract_faces(
+            img_path=img,
+            detector_backend="retinaface",
+            align=False,
+            enforce_detection=True
+        )
+        primary_face = _pick_primary_face(faces)
+        if not primary_face:
+            return None
+
+        cropped = _crop_face_from_area(img, primary_face.get("facial_area", {}), target_size=target_size)
+        if cropped is None:
+            return None
+
+        represent_res = DeepFace.represent(
+            img_path=cropped,
+            model_name="ArcFace",
+            detector_backend="skip",
+            align=True,
+            enforce_detection=False
+        )
+        if not represent_res:
+            return None
+
+        rep = represent_res[0] if isinstance(represent_res, list) else represent_res
+        emb = np.array(rep["embedding"], dtype=np.float32)
+        emb_norm = np.linalg.norm(emb)
+        if emb_norm == 0:
+            return None
+        emb = emb / emb_norm
+
+        gray = cv2.cvtColor(cropped, cv2.COLOR_BGR2GRAY)
+        sharpness = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+        area = cropped.shape[0] * cropped.shape[1]
+        quality = round((area / 1000.0) + sharpness, 2)
+
+        ok, buffer = cv2.imencode('.jpg', cropped, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+        if not ok:
+            return None
+
+        return {
+            "embedding": emb.tolist(),
+            "face_bytes": buffer.tobytes(),
+            "quality": quality,
+            "facial_area": primary_face.get("facial_area", {})
+        }
+    except Exception as e:
+        print(f"Face Analysis Error: {e}")
+        return None
+
+
 def get_face_embedding(img_source):
     """
     Extract embedding vector from an image source.
     Uses ArcFace + RetinaFace and returns L2-normalized embedding.
     """
     try:
-        img = _decode_image(img_source)
-        if img is None:
+        result = analyze_face(img_source)
+        if not result:
             return None, False
-
-        # Soft eye heuristic only; do not reject hard as this is noisy.
-        try:
-            eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            eyes = eye_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=3, minSize=(10, 10))
-            if len(eyes) == 0:
-                print("Eye check warning: no eyes detected. Continuing with face model.")
-        except Exception as e:
-            print("Eye check skipped due to error:", e)
-
-        res = DeepFace.represent(
-            img_path=img,
-            model_name="ArcFace",
-            detector_backend="retinaface",
-            align=True,
-            enforce_detection=True
-        )
-
-        if res and len(res) > 0:
-            largest_face = max(res, key=lambda x: x["facial_area"]["w"] * x["facial_area"]["h"])
-            emb = np.array(largest_face["embedding"], dtype=np.float32)
-            emb_norm = np.linalg.norm(emb)
-            if emb_norm == 0:
-                return None, False
-            emb = emb / emb_norm
-            return emb.tolist(), True
-
-        return None, False
+        return result["embedding"], True
     except Exception as e:
         print(f"Embedding Error: {e}")
         return None, False
@@ -80,31 +149,10 @@ def embedding_distance(emb1, emb2):
 
 def crop_and_zoom_face(image_source, target_size=(512, 512)):
     try:
-        img = _decode_image(image_source)
-        if img is None:
+        result = analyze_face(image_source, target_size=target_size)
+        if not result:
             return None, False
-
-        faces = DeepFace.extract_faces(
-            img_path=img,
-            target_size=target_size,
-            detector_backend="retinaface",
-            align=True,
-            enforce_detection=True
-        )
-
-        if len(faces) > 0:
-            face_img = faces[0]["face"]
-
-            if face_img.max() <= 1:
-                face_img = face_img * 255
-
-            face_img = face_img.astype(np.uint8)
-            face_img = cv2.cvtColor(face_img, cv2.COLOR_RGB2BGR)
-
-            _, buffer = cv2.imencode('.jpg', face_img)
-            return buffer.tobytes(), True
-
-        return None, False
+        return result["face_bytes"], True
 
     except Exception as e:
         print(f"Face Zoom Error: {e}")

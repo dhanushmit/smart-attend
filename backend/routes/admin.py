@@ -8,7 +8,7 @@ import json
 import io
 import pandas as pd
 import base64
-from utils.face_utils import get_face_embedding, crop_and_zoom_face, embedding_distance
+from utils.face_utils import get_face_embedding, crop_and_zoom_face, embedding_distance, analyze_face
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import getSampleStyleSheet
@@ -368,10 +368,12 @@ def manage_students():
         
         saved_embeddings = 0
         main_filename = None
+        best_capture = None
         
         for i, img_b64 in enumerate(images):
-            embedding, success = get_face_embedding(img_b64)
-            if success:
+            analysis = analyze_face(img_b64)
+            if analysis:
+                embedding = analysis["embedding"]
                 duplicate_student, duplicate_distance = _find_duplicate_face(embedding)
                 if duplicate_student:
                     db.session.rollback()
@@ -387,21 +389,21 @@ def manage_students():
                 )
                 db.session.add(new_emb)
                 saved_embeddings = int(saved_embeddings) + 1
-                
-                if i == 0 or main_filename is None:
-                    face_bytes, crop_success = crop_and_zoom_face(img_b64)
-                    if crop_success:
-                        main_filename = f"students/{new_user.id}_profile.jpg"
-                        file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], main_filename)
-                        os.makedirs(os.path.dirname(file_path), exist_ok=True)
-                        with open(file_path, "wb") as f:
-                            f.write(face_bytes)
+
+                if best_capture is None or analysis["quality"] > best_capture["quality"]:
+                    best_capture = analysis
 
         if saved_embeddings == 0:
             db.session.rollback()
             return jsonify({"msg": "Enrollment Failed: No clear faces detected in your captures! Please try again with better lighting."}), 400
 
         try:
+            if best_capture:
+                main_filename = f"students/{new_user.id}_profile.jpg"
+                file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], main_filename)
+                os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                with open(file_path, "wb") as f:
+                    f.write(best_capture["face_bytes"])
             new_student.reference_image_path = main_filename
             db.session.commit()
             return jsonify({"msg": f"Student created with {saved_embeddings} biometric profiles."}), 201
@@ -502,11 +504,13 @@ def update_student_face(id):
     try:
         from utils.face_utils import crop_and_zoom_face, get_face_embedding
 
-        embedding, embedding_ok = get_face_embedding(captured_img_base64)
-        face_bytes, crop_success = crop_and_zoom_face(captured_img_base64)
+        analysis = analyze_face(captured_img_base64)
 
-        if not embedding_ok or not crop_success:
+        if not analysis:
             return jsonify({"msg": "No face detected in capture. Face not updated."}), 400
+
+        embedding = analysis["embedding"]
+        face_bytes = analysis["face_bytes"]
 
         duplicate_student, duplicate_distance = _find_duplicate_face(embedding, exclude_student_id=student.id)
         if duplicate_student:

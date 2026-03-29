@@ -59,9 +59,11 @@ def _student_history_rows(student, limit=30):
 def verify_face():
     user_id = get_jwt_identity()
     data = request.get_json() or {}
-    captured_img_base64 = data.get('image')
+    captured_images = data.get('images') or []
+    if not captured_images and data.get('image'):
+        captured_images = [data.get('image')]
 
-    if not captured_img_base64:
+    if not captured_images:
         return jsonify({"msg": "Image is required", "verified": False}), 400
 
     student = Student.query.filter_by(user_id=int(user_id)).first()
@@ -74,22 +76,11 @@ def verify_face():
         return jsonify({"msg": "No biometric profiles found for this student!"}), 404
 
     try:
-        from deepface import DeepFace
         from flask import current_app
+        from deepface import DeepFace
         from utils.face_utils import get_face_embedding
 
-        # Use the same extraction pipeline as enrollment to reduce mismatch drift
-        new_embedding, success = get_face_embedding(captured_img_base64)
-        if not success or not new_embedding:
-            return jsonify({"msg": "Face detection failed. Keep full face in frame and retry.", "verified": False}), 400
-
-        new_emb = np.array(new_embedding, dtype=np.float32)
-        norm = np.linalg.norm(new_emb)
-        if norm == 0:
-            return jsonify({"msg": "Captured face features are invalid. Retry with better lighting.", "verified": False}), 400
-        new_emb = new_emb / norm
-
-        distances = []
+        stored_embeddings = []
 
         if student_embs:
             for record in student_embs:
@@ -97,8 +88,7 @@ def verify_face():
                 emb_norm = np.linalg.norm(emb)
                 if emb_norm == 0:
                     continue
-                emb = emb / emb_norm
-                distances.append(float(np.linalg.norm(new_emb - emb)))
+                stored_embeddings.append(emb / emb_norm)
         else:
             # Backward-compatible fallback for legacy single-image enrollments
             ref_path = os.path.join(current_app.config['UPLOAD_FOLDER'], student.reference_image_path)
@@ -117,30 +107,49 @@ def verify_face():
             emb_norm = np.linalg.norm(emb)
             if emb_norm == 0:
                 return jsonify({"msg": "Stored reference face is corrupted. Re-enroll this student profile.", "verified": False}), 400
-            emb = emb / emb_norm
-            distances.append(float(np.linalg.norm(new_emb - emb)))
+            stored_embeddings.append(emb / emb_norm)
 
-        if not distances:
+        if not stored_embeddings:
             return jsonify({"msg": "No usable face profiles found. Re-enroll the student face.", "verified": False}), 400
 
-        min_distance = min(distances)
+        best_distance = None
+        valid_frames = 0
+        for image in captured_images:
+            new_embedding, success = get_face_embedding(image)
+            if not success or not new_embedding:
+                continue
 
-        # ArcFace + normalized vectors: <= 1.00 is a reliable strict threshold
-        l2_threshold = 1.00
-        is_match = min_distance <= l2_threshold
-        confidence = max(0.0, min(100.0, (1.0 - (min_distance / 1.60)) * 100.0))
+            new_emb = np.array(new_embedding, dtype=np.float32)
+            norm = np.linalg.norm(new_emb)
+            if norm == 0:
+                continue
+            new_emb = new_emb / norm
+            frame_distance = min(float(np.linalg.norm(new_emb - emb)) for emb in stored_embeddings)
+            valid_frames += 1
+            if best_distance is None or frame_distance < best_distance:
+                best_distance = frame_distance
+
+        if best_distance is None or valid_frames == 0:
+            return jsonify({"msg": "Face detection failed. Keep full face in frame and retry.", "verified": False}), 400
+
+        # Burst verification lets us stay slightly strict while avoiding false rejects.
+        l2_threshold = 1.08
+        is_match = best_distance <= l2_threshold
+        confidence = max(0.0, min(100.0, (1.0 - (best_distance / 1.55)) * 100.0))
 
         if is_match:
             return jsonify({
                 "msg": f"Verified ({confidence:.0f}%)",
                 "verified": True,
-                "distance": round(min_distance, 4)
+                "distance": round(best_distance, 4),
+                "frames_used": valid_frames
             }), 200
 
         return jsonify({
-            "msg": f"Face mismatched (distance: {min_distance:.3f}, threshold: {l2_threshold:.2f})",
+            "msg": f"Face mismatched (distance: {best_distance:.3f}, threshold: {l2_threshold:.2f})",
             "verified": False,
-            "distance": round(min_distance, 4)
+            "distance": round(best_distance, 4),
+            "frames_used": valid_frames
         }), 400
 
     except ValueError:

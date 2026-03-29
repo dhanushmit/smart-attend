@@ -38,14 +38,21 @@ const MarkAttendance = () => {
       const canvas = document.createElement('canvas');
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
-      canvas.getContext('2d').drawImage(video, 0, 0);
-      const base64Image = canvas.toDataURL('image/jpeg', 0.8);
+      const ctx = canvas.getContext('2d');
+      const burstImages = [];
+      for (let i = 0; i < 4; i++) {
+        ctx.drawImage(video, 0, 0);
+        burstImages.push(canvas.toDataURL('image/jpeg', 0.9));
+        if (i < 3) {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+      }
 
       const token = localStorage.getItem('token'); // Send to backend for verification
       
       // Phase 1: Verify Face
       const response = await axios.post(`${API_BASE}/attendance/verify-face`, 
-        { image: base64Image },
+        { images: burstImages },
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
@@ -110,7 +117,7 @@ const MarkAttendance = () => {
                   {isVerifying && (
                     <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm flex flex-col items-center justify-center">
                       <Zap size={48} className="text-cyan-400 animate-bounce mb-4" />
-                      <span className="text-cyan-400 font-black text-xs uppercase tracking-[0.3em]">Processing...</span>
+                      <span className="text-cyan-400 font-black text-xs uppercase tracking-[0.3em]">Burst Verifying...</span>
                     </div>
                   )}
                 </div>
@@ -122,7 +129,7 @@ const MarkAttendance = () => {
                   disabled={isVerifying}
                   className="w-full py-6 bg-gradient-to-r from-cyan-600 to-blue-600 rounded-3xl text-white font-black text-lg shadow-xl shadow-cyan-500/20 flex items-center justify-center gap-4 active:scale-95 transition-all"
                 >
-                  {isVerifying ? "Verifying..." : <><Shield size={24} /> QUICK SCAN</>}
+                  {isVerifying ? "Verifying..." : <><Shield size={24} /> BURST SCAN</>}
                 </button>
             </div>
           </motion.div>
