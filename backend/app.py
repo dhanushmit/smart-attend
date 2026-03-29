@@ -6,11 +6,12 @@ os.environ['TF_USE_LEGACY_KERAS'] = '1'
 from flask import Flask, send_from_directory
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
+from werkzeug.security import generate_password_hash
 from routes.auth import auth_bp
 from routes.attendance import attendance_bp
 from routes.advisor import advisor_bp
 from routes.admin import admin_bp
-from models import db
+from models import db, User, Class, Student
 
 app = Flask(__name__)
 
@@ -52,6 +53,62 @@ os.makedirs(db_path, exist_ok=True)
 
 with app.app_context():
     db.create_all()
+
+    def seed_defaults():
+        if User.query.filter_by(role='admin').first():
+            return
+
+        admin = User(
+            username='admin',
+            password_hash=generate_password_hash('Admin@123'),
+            role='admin',
+            fullname='System Admin',
+            email='admin@smartattend.local'
+        )
+        advisor = User(
+            username='advisor',
+            password_hash=generate_password_hash('Advisor@123'),
+            role='advisor',
+            fullname='Class Advisor',
+            email='advisor@smartattend.local'
+        )
+        student = User(
+            username='student',
+            password_hash=generate_password_hash('Student@123'),
+            role='student',
+            fullname='Student User',
+            email='student@smartattend.local'
+        )
+        dhanush = User(
+            username='dhanush',
+            password_hash=generate_password_hash('Dhanush@123'),
+            role='student',
+            fullname='Dhanush S',
+            email='dhanush@smartattend.local'
+        )
+        chiru = User(
+            username='Chiranjeevi',
+            password_hash=generate_password_hash('Chiru@123'),
+            role='student',
+            fullname='Chiranjeevi',
+            email='chiranjeevi@smartattend.local'
+        )
+
+        db.session.add_all([admin, advisor, student, dhanush, chiru])
+        db.session.flush()
+
+        default_class = Class(name='CSE-A', advisor_id=advisor.id)
+        db.session.add(default_class)
+        db.session.flush()
+
+        db.session.add_all([
+            Student(user_id=student.id, class_id=default_class.id, roll_no='2024ST001'),
+            Student(user_id=dhanush.id, class_id=default_class.id, roll_no='323UIT005'),
+            Student(user_id=chiru.id, class_id=default_class.id, roll_no='004'),
+        ])
+        db.session.commit()
+
+    seed_defaults()
 
 @app.route('/')
 def index():
