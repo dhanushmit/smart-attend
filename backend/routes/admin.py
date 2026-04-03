@@ -567,6 +567,35 @@ def update_student_face(id):
         db.session.rollback()
         return jsonify({"msg": f"Face processing error: {str(e)}"}), 500
 
+
+@admin_bp.route('/students/<int:id>/biometric-reset', methods=['POST'])
+@jwt_required()
+def reset_student_biometrics(id):
+    user_id = get_jwt_identity()
+    user = User.query.get(int(user_id))
+    if user.role != 'admin':
+        return jsonify({"msg": "Admin access required"}), 403
+
+    student = Student.query.get_or_404(id)
+    try:
+        # Delete embeddings
+        FaceEmbedding.query.filter_by(student_id=student.id).delete()
+
+        # Delete reference image file (optional but prevents stale re-use)
+        if student.reference_image_path:
+            file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], student.reference_image_path)
+            if os.path.exists(file_path) and not os.path.isdir(file_path):
+                try:
+                    os.remove(file_path)
+                except OSError:
+                    pass
+        student.reference_image_path = None
+        db.session.commit()
+        return jsonify({"msg": "Biometrics reset. Re-enroll face for this student."}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"msg": f"Reset failed: {str(e)}"}), 500
+
 @admin_bp.route('/advisors', methods=['GET', 'POST'])
 @jwt_required()
 def manage_advisors():

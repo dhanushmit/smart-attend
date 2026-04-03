@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
 import GlassCard from '../../components/GlassCard';
 import Navbar from '../../components/Navbar';
-import { Shield, UserPlus, Database, PieChart, Activity, Settings, Users, History, TrendingUp } from 'lucide-react';
+import { Shield, UserPlus, Database, PieChart, Activity, Settings, Users, History, TrendingUp, Camera } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import axios from 'axios';
@@ -37,6 +37,7 @@ const AdminDashboard = () => {
     { label: 'Manage Advisors', icon: Shield, color: 'bg-indigo-500/20 text-indigo-400', path: '/admin/advisors' },
     { label: 'Attendance History', icon: History, color: 'bg-amber-500/20 text-amber-500', path: '/admin/history' },
     { label: 'View Analytics', icon: TrendingUp, color: 'bg-purple-500/20 text-purple-400', path: '/admin/analytics' },
+    { label: 'Kiosk Scan', icon: Camera, color: 'bg-emerald-500/20 text-emerald-400', path: '/admin/kiosk' },
   ];
 
   return (

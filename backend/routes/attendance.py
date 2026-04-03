@@ -77,7 +77,6 @@ def verify_face():
 
     try:
         from flask import current_app
-        from deepface import DeepFace
         from utils.face_utils import get_face_embedding
 
         stored_embeddings = []
@@ -93,46 +92,42 @@ def verify_face():
                 if emb_norm == 0:
                     continue
                 stored_embeddings.append(emb / emb_norm)
-        else:
-            # Backward-compatible fallback for legacy single-image enrollments
-            ref_path = os.path.join(current_app.config['UPLOAD_FOLDER'], student.reference_image_path)
-            res2 = DeepFace.represent(
-                img_path=ref_path,
-                model_name="ArcFace",
-                detector_backend="retinaface",
-                align=True,
-                enforce_detection=False
-            )
-            if not res2:
-                return jsonify({"msg": "Stored reference face is invalid. Re-enroll this student profile.", "verified": False}), 400
+        ref_emb = None
+        ref_used = False
 
-            ref_face = max(res2, key=lambda x: x["facial_area"]["w"] * x["facial_area"]["h"])
-            emb = np.array(ref_face["embedding"], dtype=np.float32)
-            emb_norm = np.linalg.norm(emb)
-            if emb_norm == 0:
-                return jsonify({"msg": "Stored reference face is corrupted. Re-enroll this student profile.", "verified": False}), 400
-            stored_embeddings.append(emb / emb_norm)
-
-        # Also compare with the latest reference image embedding so stale DB vectors don't break real users.
+        # Always compute an embedding from the currently stored reference image.
+        # This fixes "face updated but verify still fails" when DB vectors are stale.
         if student.reference_image_path:
             ref_path = os.path.join(current_app.config['UPLOAD_FOLDER'], student.reference_image_path)
             if os.path.exists(ref_path):
-                try:
-                    ref_res = DeepFace.represent(
-                        img_path=ref_path,
-                        model_name="ArcFace",
-                        detector_backend="retinaface",
-                        align=True,
-                        enforce_detection=False
-                    )
-                    if ref_res:
-                        ref_face = max(ref_res, key=lambda x: x["facial_area"]["w"] * x["facial_area"]["h"])
-                        ref_emb = np.array(ref_face["embedding"], dtype=np.float32)
-                        ref_norm = np.linalg.norm(ref_emb)
-                        if ref_norm != 0:
-                            stored_embeddings.append(ref_emb / ref_norm)
-                except Exception as ref_err:
-                    print(f"Reference image embedding refresh warning: {ref_err}")
+                ref_embedding, ref_ok = get_face_embedding(ref_path)
+                if ref_ok and ref_embedding:
+                    ref_emb = np.array(ref_embedding, dtype=np.float32)
+                    ref_norm = np.linalg.norm(ref_emb)
+                    if ref_norm != 0:
+                        ref_emb = ref_emb / ref_norm
+                        stored_embeddings.append(ref_emb)
+                        ref_used = True
+
+        # Auto-heal: if DB embeddings disagree strongly with the reference embedding,
+        # prefer the reference embedding and refresh DB for future checks.
+        refreshed_db = False
+        if ref_used and student_embs:
+            try:
+                disagreements = [float(np.linalg.norm(ref_emb - e)) for e in stored_embeddings if e is not ref_emb]
+                # If *all* DB vectors are far from the reference, they are likely stale/corrupted.
+                if disagreements and min(disagreements) > 0.70:
+                    stored_embeddings = [ref_emb]
+                    FaceEmbedding.query.filter_by(student_id=student.id).delete()
+                    db.session.add(FaceEmbedding(
+                        student_id=student.id,
+                        embedding=json.dumps(ref_emb.tolist()),
+                        label="Auto-Heal"
+                    ))
+                    db.session.commit()
+                    refreshed_db = True
+            except Exception as heal_err:
+                print(f"Auto-heal warning: {heal_err}")
 
         if not stored_embeddings:
             return jsonify({"msg": "No usable face profiles found. Re-enroll the student face.", "verified": False}), 400
@@ -182,7 +177,9 @@ def verify_face():
             "frames_used": valid_frames,
             "stored_profiles": len(stored_embeddings),
             "frame_distances": frame_distances,
-            "profile_image": profile_image
+            "profile_image": profile_image,
+            "reference_used": ref_used,
+            "db_refreshed": refreshed_db
         }
 
         if is_match:
@@ -242,6 +239,142 @@ def mark_attendance():
         db.session.add(new_attendance)
         db.session.commit()
         return jsonify({"msg": "Attendance marked successfully"}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"msg": f"Database error: {str(e)}"}), 500
+
+
+def _is_admin_or_advisor(user_id):
+    user = User.query.get(int(user_id))
+    return user and user.role in ("admin", "advisor")
+
+
+@attendance_bp.route('/identify', methods=['POST'])
+@jwt_required()
+def identify_student():
+    """Admin/Advisor kiosk: identify a student from a face scan and optionally mark attendance."""
+    user_id = get_jwt_identity()
+    if not _is_admin_or_advisor(user_id):
+        return jsonify({"msg": "Admin/Advisor access required"}), 403
+
+    data = request.get_json() or {}
+    captured_images = data.get('images') or []
+    if not captured_images and data.get('image'):
+        captured_images = [data.get('image')]
+
+    if not captured_images:
+        return jsonify({"msg": "Image is required"}), 400
+
+    from datetime import datetime
+    from utils.face_utils import get_face_embedding
+
+    # Load all known embeddings (small demo DB; OK to do in-memory).
+    emb_rows = FaceEmbedding.query.all()
+    if not emb_rows:
+        return jsonify({"msg": "No enrolled biometrics found"}), 404
+
+    known = []
+    for row in emb_rows:
+        try:
+            e = np.array(json.loads(row.embedding), dtype=np.float32)
+            n = np.linalg.norm(e)
+            if n == 0:
+                continue
+            known.append((row.student_id, e / n))
+        except Exception:
+            continue
+
+    if not known:
+        return jsonify({"msg": "No usable biometrics found"}), 404
+
+    best = None  # (distance, student_id, frames_used)
+    frames_used = 0
+    frame_distances = []
+    for img in captured_images:
+        emb, ok = get_face_embedding(img)
+        if not ok or not emb:
+            frame_distances.append(None)
+            continue
+        q = np.array(emb, dtype=np.float32)
+        qn = np.linalg.norm(q)
+        if qn == 0:
+            frame_distances.append(None)
+            continue
+        q = q / qn
+        frames_used += 1
+
+        # Find nearest across all students.
+        nearest = min((float(np.linalg.norm(q - kemb)), sid) for (sid, kemb) in known)
+        frame_distances.append(round(nearest[0], 4))
+        if best is None or nearest[0] < best[0]:
+            best = (nearest[0], nearest[1])
+
+    if best is None or frames_used == 0:
+        return jsonify({
+            "msg": "Face detection failed. Keep full face in frame and retry.",
+            "debug": {
+                "frames_requested": len(captured_images),
+                "frames_used": frames_used,
+                "frame_distances": frame_distances
+            }
+        }), 400
+
+    best_distance, best_student_id = best
+    threshold = 1.08
+    is_match = best_distance <= threshold
+
+    student = Student.query.get(int(best_student_id))
+    if not student or not student.user:
+        return jsonify({"msg": "Matched student record missing"}), 404
+
+    result = {
+        "matched": bool(is_match),
+        "distance": round(best_distance, 4),
+        "threshold": threshold,
+        "frames_used": frames_used,
+        "student": {
+            "id": student.id,
+            "fullname": student.user.fullname,
+            "roll_no": student.roll_no,
+            "username": student.user.username,
+            "class_name": student.student_class.name if student.student_class else None
+        },
+        "debug": {
+            "frames_requested": len(captured_images),
+            "frame_distances": frame_distances,
+            "candidates": len(known)
+        }
+    }
+
+    if not is_match:
+        result["msg"] = "No confident match"
+        return jsonify(result), 400
+
+    # Optional mark attendance (default true for kiosk).
+    mark = data.get("mark", True)
+    if not mark:
+        result["msg"] = "Matched"
+        return jsonify(result), 200
+
+    today = datetime.utcnow().date()
+    exists = Attendance.query.filter_by(student_id=student.id, date=today, status='present').first()
+    if exists:
+        result["msg"] = "Already marked today"
+        result["already_marked"] = True
+        return jsonify(result), 200
+
+    try:
+        db.session.add(Attendance(
+            student_id=student.id,
+            status='present',
+            verified=True,
+            date=today,
+            time=datetime.utcnow()
+        ))
+        db.session.commit()
+        result["msg"] = "Marked present"
+        result["already_marked"] = False
+        return jsonify(result), 200
     except Exception as e:
         db.session.rollback()
         return jsonify({"msg": f"Database error: {str(e)}"}), 500

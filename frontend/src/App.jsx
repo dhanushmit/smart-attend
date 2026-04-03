@@ -16,6 +16,7 @@ import ManageAdvisors from './pages/admin/ManageAdvisors';
 import AttendanceHistory from './pages/admin/AttendanceHistory';
 import Analytics from './pages/admin/Analytics';
 import AdminProfile from './pages/admin/AdminProfile';
+import AdminKiosk from './pages/admin/Kiosk';
 import { useState, useEffect } from 'react';
 
 function App() {
@@ -58,6 +59,7 @@ function App() {
           <Route path="/admin/history" element={user?.role === 'admin' ? <AttendanceHistory /> : <Navigate to="/login" />} />
           <Route path="/admin/analytics" element={user?.role === 'admin' ? <Analytics /> : <Navigate to="/login" />} />
           <Route path="/admin/profile" element={user?.role === 'admin' ? <AdminProfile /> : <Navigate to="/login" />} />
+          <Route path="/admin/kiosk" element={user?.role === 'admin' ? <AdminKiosk /> : <Navigate to="/login" />} />
           <Route path="/admin/*" element={<Navigate to="/admin/dashboard" />} />
           
           <Route path="/" element={<Navigate to="/login" />} />

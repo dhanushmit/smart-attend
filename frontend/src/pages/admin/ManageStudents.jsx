@@ -158,6 +158,21 @@ const ManageStudents = () => {
     }
   };
 
+  const handleResetBiometric = async () => {
+    if (!activeStudent) return;
+    if (!window.confirm('Reset biometrics for this student? You must re-enroll the face again.')) return;
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(`${API_BASE}/admin/students/${activeStudent.id}/biometric-reset`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      alert('Biometrics reset. Now scan and enroll a new face.');
+      fetchStudents();
+    } catch (err) {
+      alert(err.response?.data?.msg || 'Reset failed');
+    }
+  };
+
   const handleDelete = async (id) => {
     if (!window.confirm("Delete this student?")) return;
     try {
@@ -440,7 +455,14 @@ const ManageStudents = () => {
                     </div>
                   </div>
                 </div>
-                <button type="submit" className="w-full py-4 bg-indigo-600 rounded-2xl font-bold text-white mt-4 shadow-lg shadow-indigo-600/20">Update Profile</button>
+                <div className="grid grid-cols-2 gap-3 mt-4">
+                  <button type="button" onClick={handleResetBiometric} className="w-full py-4 bg-red-500/10 border border-red-500/20 rounded-2xl font-bold text-red-300 shadow-lg shadow-red-500/10">
+                    Reset Face
+                  </button>
+                  <button type="submit" className="w-full py-4 bg-indigo-600 rounded-2xl font-bold text-white shadow-lg shadow-indigo-600/20">
+                    Update Profile
+                  </button>
+                </div>
               </form>
             </motion.div>
           </motion.div>
