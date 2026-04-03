@@ -18,7 +18,8 @@ const Login = ({ setUser }) => {
   useEffect(() => {
     const checkServer = async () => {
         try {
-            await axios.get(`${API_BASE}/`, { timeout: 2000 });
+            // Render free instances may take ~50s to wake up. Keep this a bit lenient.
+            await axios.get(`${API_BASE}/healthz`, { timeout: 15000 });
             setServerStatus('online');
         } catch (e) {
             setServerStatus('offline');
@@ -35,7 +36,8 @@ const Login = ({ setUser }) => {
       // Create axios instance with timeout
       const instance = axios.create({
           baseURL: API_BASE,
-          timeout: 10000 // 10 seconds timeout
+          // Render free cold-start can be slow; allow enough time for wake-up.
+          timeout: 65000
       });
 
       const response = await instance.post('/auth/login', { username, password });
@@ -129,15 +131,15 @@ const Login = ({ setUser }) => {
             </div>
 
             <button
-              disabled={loading || serverStatus === 'offline'}
+              disabled={loading}
               className={`w-full py-5 rounded-2xl text-white font-black text-lg flex items-center justify-center gap-3 transition-all ${
-                  loading ? 'bg-slate-800' : serverStatus === 'offline' ? 'bg-red-900/40 text-red-300' : 'bg-cyan-600 hover:bg-cyan-500 shadow-xl shadow-cyan-500/20'
+                  loading ? 'bg-slate-800' : serverStatus === 'offline' ? 'bg-red-900/40 text-red-300 hover:bg-red-900/50' : 'bg-cyan-600 hover:bg-cyan-500 shadow-xl shadow-cyan-500/20'
               }`}
             >
               {loading ? (
                 <>Verifying Identity...</>
               ) : serverStatus === 'offline' ? (
-                <><WifiOff size={20}/> Server Offline</>
+                <><WifiOff size={20}/> Wake Server & Login</>
               ) : (
                 <>Enter Terminal <ArrowRight size={20} /></>
               )}
@@ -147,7 +149,7 @@ const Login = ({ setUser }) => {
         
         {serverStatus === 'offline' && (
             <p className="text-center mt-6 text-red-500/60 text-[10px] font-bold uppercase tracking-wider">
-                Please start the backend (python backend/app.py) to login.
+                Backend may be sleeping (Render Free). Tap login once, wait up to 1 minute, then retry.
             </p>
         )}
       </motion.div>
