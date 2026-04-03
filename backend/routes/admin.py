@@ -387,9 +387,11 @@ def manage_students():
                 embedding = analysis["embedding"]
                 duplicate_student, duplicate_distance = _find_duplicate_face(embedding)
                 if duplicate_student:
+                    dup_name = duplicate_student.user.fullname if duplicate_student.user else f"Student#{duplicate_student.id}"
+                    dup_roll = duplicate_student.roll_no or "N/A"
                     db.session.rollback()
                     return jsonify({
-                        "msg": f"Duplicate face detected. This face is already enrolled for {duplicate_student.user.fullname} ({duplicate_student.roll_no}).",
+                        "msg": f"Duplicate face detected. This face is already enrolled for {dup_name} ({dup_roll}).",
                         "distance": round(duplicate_distance, 4)
                     }), 400
 
@@ -554,8 +556,10 @@ def update_student_face(id):
 
         duplicate_student, duplicate_distance = _find_duplicate_face(embedding, exclude_student_id=student.id)
         if duplicate_student:
+            dup_name = duplicate_student.user.fullname if duplicate_student.user else f"Student#{duplicate_student.id}"
+            dup_roll = duplicate_student.roll_no or "N/A"
             return jsonify({
-                "msg": f"Duplicate face detected. This face is already enrolled for {duplicate_student.user.fullname} ({duplicate_student.roll_no}).",
+                "msg": f"Duplicate face detected. This face is already enrolled for {dup_name} ({dup_roll}).",
                 "distance": round(duplicate_distance, 4)
             }), 400
 
