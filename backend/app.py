@@ -51,6 +51,21 @@ os.makedirs(db_path, exist_ok=True)
 with app.app_context():
     db.create_all()
 
+    # Lightweight SQLite migration for new columns (Render free friendly; no alembic).
+    try:
+        import sqlite3
+
+        db_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'database', 'attendance.db')
+        con = sqlite3.connect(db_file)
+        cur = con.cursor()
+        cols = [row[1] for row in cur.execute("PRAGMA table_info(face_embeddings)").fetchall()]
+        if "engine" not in cols:
+            cur.execute("ALTER TABLE face_embeddings ADD COLUMN engine VARCHAR(20)")
+            con.commit()
+        con.close()
+    except Exception as mig_err:
+        print(f"DB migration warning: {mig_err}")
+
     def seed_defaults():
         defaults = [
             ('admin', 'Admin@123', 'admin', 'System Admin', 'admin@smartattend.local'),

@@ -27,6 +27,10 @@ _ENGINE = _default_engine()
 _OPENCV_MODELS = None
 
 
+def get_engine_name():
+    return _ENGINE
+
+
 def _decode_image(img_source):
     if isinstance(img_source, str):
         if os.path.exists(img_source):
@@ -219,7 +223,7 @@ def get_face_embedding(img_source):
 
 
 def embedding_distance(emb1, emb2):
-    """Return normalized ArcFace L2 distance between two embeddings."""
+    """Return L2 distance between two L2-normalized embeddings (engine-agnostic)."""
     try:
         a = np.array(emb1, dtype=np.float32)
         b = np.array(emb2, dtype=np.float32)
@@ -230,6 +234,22 @@ def embedding_distance(emb1, emb2):
         a = a / a_norm
         b = b / b_norm
         return float(np.linalg.norm(a - b))
+    except Exception:
+        return None
+
+
+def embedding_cosine(emb1, emb2):
+    """Return cosine similarity between two L2-normalized embeddings."""
+    try:
+        a = np.array(emb1, dtype=np.float32)
+        b = np.array(emb2, dtype=np.float32)
+        a_norm = np.linalg.norm(a)
+        b_norm = np.linalg.norm(b)
+        if a_norm == 0 or b_norm == 0:
+            return None
+        a = a / a_norm
+        b = b / b_norm
+        return float(np.dot(a, b))
     except Exception:
         return None
 

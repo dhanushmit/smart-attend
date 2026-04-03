@@ -39,6 +39,8 @@ class FaceEmbedding(db.Model):
     student_id = db.Column(db.Integer, db.ForeignKey('students.id', ondelete='CASCADE'), nullable=False, index=True)
     # Native SQLite support uses JSON strings
     embedding = db.Column(db.Text, nullable=False) 
+    # Which embedding engine produced this vector ("opencv" or "deepface").
+    engine = db.Column(db.String(20), index=True)
     label = db.Column(db.String(50)) 
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
 

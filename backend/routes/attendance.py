@@ -139,7 +139,9 @@ def verify_face():
 
     try:
         from flask import current_app
-        from utils.face_utils import get_face_embedding
+        from utils.face_utils import get_face_embedding, get_engine_name, embedding_cosine
+
+        engine = get_engine_name()
 
         stored_embeddings = []
 
@@ -149,6 +151,9 @@ def verify_face():
 
         if student_embs:
             for record in student_embs:
+                # After engine switch, old embeddings should not be compared.
+                if record.engine and record.engine != engine:
+                    continue
                 emb = np.array(json.loads(record.embedding), dtype=np.float32)
                 emb_norm = np.linalg.norm(emb)
                 if emb_norm == 0:
@@ -192,15 +197,22 @@ def verify_face():
                 print(f"Auto-heal warning: {heal_err}")
 
         if not stored_embeddings:
-            return jsonify({"msg": "No usable face profiles found. Re-enroll the student face.", "verified": False}), 400
+            return jsonify({
+                "msg": "No usable face profiles found (possibly outdated embeddings). Reset and re-enroll face.",
+                "verified": False,
+                "debug": {"engine": engine}
+            }), 400
 
         best_distance = None
+        best_cosine = None
         valid_frames = 0
         frame_distances = []
+        frame_cosines = []
         for image in captured_images:
             new_embedding, success = get_face_embedding(image)
             if not success or not new_embedding:
                 frame_distances.append(None)
+                frame_cosines.append(None)
                 continue
 
             new_emb = np.array(new_embedding, dtype=np.float32)
@@ -210,10 +222,17 @@ def verify_face():
                 continue
             new_emb = new_emb / norm
             frame_distance = min(float(np.linalg.norm(new_emb - emb)) for emb in stored_embeddings)
+            # Cosine similarity against nearest stored embedding
+            cosine_vals = [embedding_cosine(new_emb, emb) for emb in stored_embeddings]
+            cosine_vals = [c for c in cosine_vals if c is not None]
+            frame_cos = max(cosine_vals) if cosine_vals else None
             frame_distances.append(round(frame_distance, 4))
+            frame_cosines.append(round(frame_cos, 4) if frame_cos is not None else None)
             valid_frames += 1
             if best_distance is None or frame_distance < best_distance:
                 best_distance = frame_distance
+            if frame_cos is not None and (best_cosine is None or frame_cos > best_cosine):
+                best_cosine = frame_cos
 
         if best_distance is None or valid_frames == 0:
             return jsonify({
@@ -228,27 +247,49 @@ def verify_face():
                 }
             }), 400
 
-        # Burst verification: accept if best is under threshold and we have enough supporting frames.
-        # ArcFace L2 distances vary by camera quality; keep a stable default but allow slight tolerance.
-        l2_threshold = 1.15
-        support_threshold = 1.22
-        valid_distances = [d for d in frame_distances if isinstance(d, (int, float))]
-        support_votes = sum(1 for d in valid_distances if d <= support_threshold)
-        is_match = (best_distance <= l2_threshold) and (support_votes >= 2 or valid_frames <= 1)
-        confidence = max(0.0, min(100.0, (1.0 - (best_distance / 1.55)) * 100.0))
-        debug_data = {
-            "best_distance": round(best_distance, 4),
-            "threshold": l2_threshold,
-            "support_threshold": support_threshold,
-            "support_votes": support_votes,
-            "frames_requested": len(captured_images),
-            "frames_used": valid_frames,
-            "stored_profiles": len(stored_embeddings),
-            "frame_distances": frame_distances,
-            "profile_image": profile_image,
-            "reference_used": ref_used,
-            "db_refreshed": refreshed_db
-        }
+        # Engine-specific thresholds:
+        # - OpenCV SFace: cosine similarity is stable (higher is better).
+        # - DeepFace ArcFace: keep L2 threshold (lower is better).
+        if engine == "opencv":
+            cos_threshold = 0.35
+            support_votes = sum(1 for c in frame_cosines if isinstance(c, (int, float)) and c >= cos_threshold)
+            is_match = (best_cosine is not None and best_cosine >= cos_threshold) and (support_votes >= 2 or valid_frames <= 1)
+            confidence = max(0.0, min(100.0, (best_cosine or 0.0) * 100.0))
+            debug_data = {
+                "engine": engine,
+                "best_cosine": round(best_cosine, 4) if best_cosine is not None else None,
+                "threshold": cos_threshold,
+                "support_votes": support_votes,
+                "frames_requested": len(captured_images),
+                "frames_used": valid_frames,
+                "stored_profiles": len(stored_embeddings),
+                "frame_cosines": frame_cosines,
+                "frame_distances": frame_distances,
+                "profile_image": profile_image,
+                "reference_used": ref_used,
+                "db_refreshed": refreshed_db
+            }
+        else:
+            l2_threshold = 1.15
+            support_threshold = 1.22
+            valid_distances = [d for d in frame_distances if isinstance(d, (int, float))]
+            support_votes = sum(1 for d in valid_distances if d <= support_threshold)
+            is_match = (best_distance <= l2_threshold) and (support_votes >= 2 or valid_frames <= 1)
+            confidence = max(0.0, min(100.0, (1.0 - (best_distance / 1.55)) * 100.0))
+            debug_data = {
+                "engine": engine,
+                "best_distance": round(best_distance, 4),
+                "threshold": l2_threshold,
+                "support_threshold": support_threshold,
+                "support_votes": support_votes,
+                "frames_requested": len(captured_images),
+                "frames_used": valid_frames,
+                "stored_profiles": len(stored_embeddings),
+                "frame_distances": frame_distances,
+                "profile_image": profile_image,
+                "reference_used": ref_used,
+                "db_refreshed": refreshed_db
+            }
 
         if is_match:
             return jsonify({
@@ -260,9 +301,10 @@ def verify_face():
             }), 200
 
         return jsonify({
-            "msg": f"Face mismatched (distance: {best_distance:.3f}, threshold: {l2_threshold:.2f})",
+            "msg": "Face mismatched",
             "verified": False,
-            "distance": round(best_distance, 4),
+            "distance": round(best_distance, 4) if best_distance is not None else None,
+            "cosine": round(best_cosine, 4) if best_cosine is not None else None,
             "frames_used": valid_frames,
             "debug": debug_data
         }), 400
@@ -340,7 +382,9 @@ def identify_student():
         }), 400
 
     from datetime import datetime
-    from utils.face_utils import get_face_embedding
+    from utils.face_utils import get_face_embedding, get_engine_name, embedding_cosine
+
+    engine = get_engine_name()
 
     # Load all known embeddings (small demo DB; OK to do in-memory).
     emb_rows = FaceEmbedding.query.all()
@@ -350,6 +394,8 @@ def identify_student():
     known = []
     for row in emb_rows:
         try:
+            if row.engine and row.engine != engine:
+                continue
             e = np.array(json.loads(row.embedding), dtype=np.float32)
             n = np.linalg.norm(e)
             if n == 0:
@@ -361,13 +407,15 @@ def identify_student():
     if not known:
         return jsonify({"msg": "No usable biometrics found"}), 404
 
-    best = None  # (distance, student_id, frames_used)
+    best = None  # (distance, cosine, student_id)
     frames_used = 0
     frame_distances = []
+    frame_cosines = []
     for img in captured_images:
         emb, ok = get_face_embedding(img)
         if not ok or not emb:
             frame_distances.append(None)
+            frame_cosines.append(None)
             continue
         q = np.array(emb, dtype=np.float32)
         qn = np.linalg.norm(q)
@@ -378,10 +426,11 @@ def identify_student():
         frames_used += 1
 
         # Find nearest across all students.
-        nearest = min((float(np.linalg.norm(q - kemb)), sid) for (sid, kemb) in known)
+        nearest = min((float(np.linalg.norm(q - kemb)), float(np.dot(q, kemb)), sid) for (sid, kemb) in known)
         frame_distances.append(round(nearest[0], 4))
+        frame_cosines.append(round(nearest[1], 4))
         if best is None or nearest[0] < best[0]:
-            best = (nearest[0], nearest[1])
+            best = (nearest[0], nearest[1], nearest[2])
 
     if best is None or frames_used == 0:
         return jsonify({
@@ -393,9 +442,13 @@ def identify_student():
             }
         }), 400
 
-    best_distance, best_student_id = best
-    threshold = 1.15
-    is_match = best_distance <= threshold
+    best_distance, best_cosine, best_student_id = best
+    if engine == "opencv":
+        threshold = 0.35  # cosine
+        is_match = best_cosine >= threshold
+    else:
+        threshold = 1.15  # L2
+        is_match = best_distance <= threshold
 
     student = Student.query.get(int(best_student_id))
     if not student or not student.user:
@@ -404,6 +457,7 @@ def identify_student():
     result = {
         "matched": bool(is_match),
         "distance": round(best_distance, 4),
+        "cosine": round(best_cosine, 4),
         "threshold": threshold,
         "frames_used": frames_used,
         "student": {
@@ -414,8 +468,10 @@ def identify_student():
             "class_name": student.student_class.name if student.student_class else None
         },
         "debug": {
+            "engine": engine,
             "frames_requested": len(captured_images),
             "frame_distances": frame_distances,
+            "frame_cosines": frame_cosines,
             "candidates": len(known)
         }
     }

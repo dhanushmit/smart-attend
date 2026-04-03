@@ -8,7 +8,7 @@ import json
 import io
 import pandas as pd
 import base64
-from utils.face_utils import get_face_embedding, crop_and_zoom_face, embedding_distance, analyze_face
+from utils.face_utils import get_face_embedding, crop_and_zoom_face, embedding_distance, analyze_face, get_engine_name
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import getSampleStyleSheet
@@ -390,6 +390,7 @@ def manage_students():
                 new_emb = FaceEmbedding(
                     student_id=new_student.id,
                     embedding=json.dumps(embedding),
+                    engine=get_engine_name(),
                     label=f"Capture {i+1}"
                 )
                 db.session.add(new_emb)
@@ -499,6 +500,7 @@ def update_delete_student(id):
                     db.session.add(FaceEmbedding(
                         student_id=student.id,
                         embedding=json.dumps(embedding),
+                        engine=get_engine_name(),
                         label="Profile Update"
                     ))
             except Exception as embed_err:
@@ -562,6 +564,7 @@ def update_student_face(id):
         db.session.add(FaceEmbedding(
             student_id=student.id,
             embedding=json.dumps(embedding),
+            engine=get_engine_name(),
             label="Face Update"
         ))
 
