@@ -37,6 +37,7 @@ const ManageStudents = () => {
   });
 
   const [saving, setSaving] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState({ type: '', msg: '' });
   const [selectedFile, setSelectedFile] = useState(null);
   const [capturedImages, setCapturedImages] = useState([]);
   const [captureProgress, setCaptureProgress] = useState(0);
@@ -127,32 +128,61 @@ const ManageStudents = () => {
   const handleUpdate = async (e) => {
     e.preventDefault();
     setSaving(true);
+    setUpdateStatus({ type: '', msg: '' });
     const token = localStorage.getItem('token');
-    const formData = new FormData();
-    Object.keys(editForm).forEach(key => {
-        if (editForm[key]) formData.append(key, editForm[key]);
-    });
-    
-    if (selectedFile) {
-        const blob = typeof selectedFile === 'string' ? dataURLtoBlob(selectedFile) : selectedFile;
-        if (blob) formData.append('image', blob, 'update.jpg');
-    }
 
     try {
-      await axios.put(`${API_BASE}/admin/students/${activeStudent.id}`, formData, {
-        headers: { 
+      if (!activeStudent?.id) {
+        throw new Error('Student not selected');
+      }
+
+      const isDataUrl = typeof selectedFile === 'string' && selectedFile.startsWith('data:image');
+
+      // If we captured from camera (dataURL), send JSON (more reliable in mobile WebViews).
+      if (!selectedFile || isDataUrl) {
+        const payload = {
+          ...editForm,
+          // Ensure backend can unassign when dropdown is blank.
+          class_id: editForm.class_id ?? ''
+        };
+        if (isDataUrl) payload.image = selectedFile;
+
+        await axios.put(`${API_BASE}/admin/students/${activeStudent.id}`, payload, {
+          headers: {
             Authorization: `Bearer ${token}`,
-            'Content-Type': 'multipart/form-data'
-        }
-      });
+            'Content-Type': 'application/json'
+          }
+        });
+      } else {
+        // File upload path (let the browser set the multipart boundary; do not set Content-Type manually).
+        const formData = new FormData();
+        Object.keys(editForm).forEach((key) => {
+          if (key === 'class_id') {
+            formData.append(key, editForm[key] ?? '');
+            return;
+          }
+          if (editForm[key]) formData.append(key, editForm[key]);
+        });
+
+        const blob = dataURLtoBlob(preview) || selectedFile;
+        if (blob) formData.append('image', blob, 'update.jpg');
+
+        await axios.put(`${API_BASE}/admin/students/${activeStudent.id}`, formData, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+      }
+
       setShowEditModal(false);
       setSelectedFile(null);
       setPreview(null);
       fetchStudents();
+      setUpdateStatus({ type: 'ok', msg: 'Update successful' });
       alert("Update successful!");
     } catch (err) {
       console.error("Update Error:", err.response?.data);
-      alert(err.response?.data?.msg || "Error updating student");
+      const msg = err.response?.data?.msg || err.message || "Error updating student";
+      setUpdateStatus({ type: 'err', msg });
+      alert(msg);
     } finally {
         setSaving(false);
     }
@@ -459,10 +489,20 @@ const ManageStudents = () => {
                   <button type="button" onClick={handleResetBiometric} className="w-full py-4 bg-red-500/10 border border-red-500/20 rounded-2xl font-bold text-red-300 shadow-lg shadow-red-500/10">
                     Reset Face
                   </button>
-                  <button type="submit" className="w-full py-4 bg-indigo-600 rounded-2xl font-bold text-white shadow-lg shadow-indigo-600/20">
-                    Update Profile
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="w-full py-4 bg-indigo-600 rounded-2xl font-bold text-white shadow-lg shadow-indigo-600/20 disabled:opacity-50"
+                  >
+                    {saving ? 'Updating...' : 'Update Profile'}
                   </button>
                 </div>
+
+                {updateStatus.msg && (
+                  <div className={`mt-3 text-xs font-bold ${updateStatus.type === 'ok' ? 'text-green-400' : 'text-red-300'}`}>
+                    {updateStatus.msg}
+                  </div>
+                )}
               </form>
             </motion.div>
           </motion.div>
