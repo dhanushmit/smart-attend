@@ -26,7 +26,10 @@ class Student(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), index=True)
     class_id = db.Column(db.Integer, db.ForeignKey('classes.id', ondelete='SET NULL'), index=True)
     roll_no = db.Column(db.String(20), unique=True, index=True)
-    reference_image_path = db.Column(db.Text) # Representative image
+    # Representative image. For cloud deployments (Render free), prefer DB blob storage.
+    reference_image_path = db.Column(db.Text)
+    reference_image_blob = db.Column(db.LargeBinary)
+    reference_image_mime = db.Column(db.String(50), default="image/jpeg")
     
     user = db.relationship('User', backref='student_profile')
     student_class = db.relationship('Class', backref='students')

@@ -1,6 +1,8 @@
 import os
 
-from flask import Flask, send_from_directory
+import io
+
+from flask import Flask, send_from_directory, send_file
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 from werkzeug.security import generate_password_hash
@@ -12,8 +14,15 @@ from models import db, User, Class, Student
 
 app = Flask(__name__)
 
-# Strictly Local SQLite Database Setup
-db_uri = f"sqlite:///{os.path.join(os.path.dirname(os.path.abspath(__file__)), 'database', 'attendance.db')}"
+# Database setup:
+# - If DATABASE_URL is provided (recommended for Render), use it (Postgres, etc.)
+# - Otherwise fall back to local SQLite (dev only)
+default_sqlite = f"sqlite:///{os.path.join(os.path.dirname(os.path.abspath(__file__)), 'database', 'attendance.db')}"
+db_uri = os.environ.get("DATABASE_URL") or default_sqlite
+
+# SQLAlchemy prefers postgresql:// (some providers still output postgres://)
+if db_uri.startswith("postgres://"):
+    db_uri = "postgresql://" + db_uri[len("postgres://"):]
 
 app.config['SQLALCHEMY_DATABASE_URI'] = db_uri
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -36,6 +45,26 @@ os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'students'), exist_ok=True
 def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
+
+@app.route('/public/student-photo/<int:student_id>')
+def public_student_photo(student_id):
+    """
+    Public photo URL for mobile/webview stability.
+    This serves the cropped face stored in DB (preferred) or falls back to local file.
+    """
+    student = Student.query.get(int(student_id))
+    if not student:
+        return {"msg": "Not found"}, 404
+
+    if getattr(student, "reference_image_blob", None):
+        mime = getattr(student, "reference_image_mime", None) or "image/jpeg"
+        return send_file(io.BytesIO(student.reference_image_blob), mimetype=mime)
+
+    if student.reference_image_path:
+        return send_from_directory(app.config['UPLOAD_FOLDER'], student.reference_image_path)
+
+    return {"msg": "No photo"}, 404
+
 CORS(app)
 db.init_app(app)
 jwt = JWTManager(app)
@@ -51,18 +80,29 @@ os.makedirs(db_path, exist_ok=True)
 with app.app_context():
     db.create_all()
 
-    # Lightweight SQLite migration for new columns (Render free friendly; no alembic).
+    # Lightweight SQLite migrations for dev (no alembic).
     try:
         import sqlite3
 
-        db_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'database', 'attendance.db')
-        con = sqlite3.connect(db_file)
-        cur = con.cursor()
-        cols = [row[1] for row in cur.execute("PRAGMA table_info(face_embeddings)").fetchall()]
-        if "engine" not in cols:
-            cur.execute("ALTER TABLE face_embeddings ADD COLUMN engine VARCHAR(20)")
+        if app.config['SQLALCHEMY_DATABASE_URI'].startswith("sqlite:///"):
+            db_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'database', 'attendance.db')
+            con = sqlite3.connect(db_file)
+            cur = con.cursor()
+
+            # face_embeddings.engine
+            cols = [row[1] for row in cur.execute("PRAGMA table_info(face_embeddings)").fetchall()]
+            if "engine" not in cols:
+                cur.execute("ALTER TABLE face_embeddings ADD COLUMN engine VARCHAR(20)")
+
+            # students.reference_image_blob + mime
+            scol = [row[1] for row in cur.execute("PRAGMA table_info(students)").fetchall()]
+            if "reference_image_blob" not in scol:
+                cur.execute("ALTER TABLE students ADD COLUMN reference_image_blob BLOB")
+            if "reference_image_mime" not in scol:
+                cur.execute("ALTER TABLE students ADD COLUMN reference_image_mime VARCHAR(50)")
+
             con.commit()
-        con.close()
+            con.close()
     except Exception as mig_err:
         print(f"DB migration warning: {mig_err}")
 

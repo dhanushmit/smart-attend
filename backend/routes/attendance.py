@@ -146,8 +146,8 @@ def verify_face():
         stored_embeddings = []
 
         profile_image = None
-        if student.reference_image_path:
-            profile_image = f"{request.host_url.rstrip('/')}/uploads/{student.reference_image_path}"
+        if getattr(student, "reference_image_blob", None) or student.reference_image_path:
+            profile_image = f"{request.host_url.rstrip('/')}/public/student-photo/{student.id}"
 
         if student_embs:
             for record in student_embs:

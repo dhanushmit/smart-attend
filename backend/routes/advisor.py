@@ -20,6 +20,12 @@ def _upload_url(filename):
     return f"{request.host_url.rstrip('/')}/uploads/{filename}"
 
 
+def _student_photo_url(student):
+    if not student:
+        return None
+    return f"{request.host_url.rstrip('/')}/public/student-photo/{student.id}"
+
+
 def _class_session_dates(class_id):
     rows = db.session.query(Attendance.date).join(Student).filter(
         Student.class_id == class_id
@@ -187,6 +193,8 @@ def manage_students():
             att_today = Attendance.query.filter_by(student_id=s.id, date=today).first()
             
             image_url = _upload_url(s.reference_image_path)
+            if getattr(s, "reference_image_blob", None) or s.reference_image_path:
+                image_url = _student_photo_url(s)
 
             result.append({
                 "id": s.id,

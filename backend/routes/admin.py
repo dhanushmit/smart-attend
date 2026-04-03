@@ -24,6 +24,12 @@ def _upload_url(filename):
     return f"{request.host_url.rstrip('/')}/uploads/{filename}"
 
 
+def _student_photo_url(student):
+    if not student:
+        return None
+    return f"{request.host_url.rstrip('/')}/public/student-photo/{student.id}"
+
+
 def _all_session_dates(class_id=None):
     query = db.session.query(Attendance.date).distinct()
     if class_id:
@@ -314,7 +320,7 @@ def manage_students():
         students = Student.query.all()
         result = []
         for s in students:
-            image_url = _upload_url(s.reference_image_path)
+            image_url = _student_photo_url(s) if (getattr(s, "reference_image_blob", None) or s.reference_image_path) else None
             metrics = _student_metrics(s)
             result.append({
                 "id": s.id,
@@ -405,12 +411,11 @@ def manage_students():
 
         try:
             if best_capture:
-                main_filename = f"students/{new_user.id}_profile.jpg"
-                file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], main_filename)
-                os.makedirs(os.path.dirname(file_path), exist_ok=True)
-                with open(file_path, "wb") as f:
-                    f.write(best_capture["face_bytes"])
-            new_student.reference_image_path = main_filename
+                # Store cropped face in DB for persistence (Render free has ephemeral disk).
+                new_student.reference_image_blob = best_capture["face_bytes"]
+                new_student.reference_image_mime = "image/jpeg"
+                # Keep path for local dev fallback (optional).
+                new_student.reference_image_path = None
             db.session.commit()
             return jsonify({"msg": f"Student created with {saved_embeddings} biometric profiles."}), 201
         except Exception as e:
@@ -491,6 +496,16 @@ def update_delete_student(id):
                     except: pass
             
             student.reference_image_path = filename
+            # Store the latest face photo in DB for persistence.
+            try:
+                analysis = analyze_face(img_data if img_data else file_path)
+                if analysis and analysis.get("face_bytes"):
+                    student.reference_image_blob = analysis["face_bytes"]
+                    student.reference_image_mime = "image/jpeg"
+                    # If blob exists, path is no longer required for prod.
+                    student.reference_image_path = None
+            except Exception as blob_err:
+                print(f"Student image blob warning: {blob_err}")
 
             try:
                 source_image = img_data if img_data else file_path
@@ -544,20 +559,10 @@ def update_student_face(id):
                 "distance": round(duplicate_distance, 4)
             }), 400
 
-        filename = f"students/{student.user_id}_face_{int(datetime.utcnow().timestamp())}.jpg"
-        final_path = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
-        os.makedirs(os.path.dirname(final_path), exist_ok=True)
-
-        with open(final_path, "wb") as f:
-            f.write(face_bytes)
-
-        if student.reference_image_path:
-            old_path = os.path.join(current_app.config['UPLOAD_FOLDER'], student.reference_image_path)
-            if os.path.exists(old_path) and not os.path.isdir(old_path):
-                try:
-                    os.remove(old_path)
-                except OSError:
-                    pass
+        # Persist photo in DB (preferred for Render free).
+        student.reference_image_blob = face_bytes
+        student.reference_image_mime = "image/jpeg"
+        student.reference_image_path = None
 
         # Replace old embeddings so verification uses the latest enrolled face.
         FaceEmbedding.query.filter_by(student_id=student.id).delete()
@@ -568,7 +573,8 @@ def update_student_face(id):
             label="Face Update"
         ))
 
-        student.reference_image_path = filename
+        # Photo is stored in DB blob; keep path empty for cloud stability.
+        student.reference_image_path = None
         db.session.commit()
         return jsonify({"msg": "Face profile updated successfully"}), 200
     except Exception as e:
@@ -604,6 +610,8 @@ def reset_student_biometrics(id):
                 except OSError:
                     pass
         student.reference_image_path = None
+        student.reference_image_blob = None
+        student.reference_image_mime = "image/jpeg"
         db.session.commit()
         return jsonify({"msg": "Biometrics reset. Re-enroll face for this student."}), 200
     except Exception as e:

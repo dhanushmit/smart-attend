@@ -11,6 +11,13 @@ def _upload_url(filename):
         return None
     return f"{request.host_url.rstrip('/')}/uploads/{filename}"
 
+
+def _student_photo_url(student):
+    if not student:
+        return None
+    # Always prefer the public photo endpoint (DB blob or file fallback).
+    return f"{request.host_url.rstrip('/')}/public/student-photo/{student.id}"
+
 @auth_bp.route('/register', methods=['POST'])
 def register():
     data = request.get_json()
@@ -40,8 +47,8 @@ def login():
             img = None
             if user.role == 'student' and user.student_profile and len(user.student_profile) > 0:
                 s = user.student_profile[0]
-                if s.reference_image_path:
-                    img = _upload_url(s.reference_image_path)
+                if getattr(s, "reference_image_blob", None) or s.reference_image_path:
+                    img = _student_photo_url(s)
             
             access_token = create_access_token(identity=str(user.id))
             return jsonify({
