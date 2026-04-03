@@ -1,8 +1,5 @@
 import os
 
-# CRITICAL FIX for DeepFace + TensorFlow 2.16+ Keras error
-os.environ['TF_USE_LEGACY_KERAS'] = '1'
-
 from flask import Flask, send_from_directory
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
@@ -132,16 +129,6 @@ if __name__ == '__main__':
     log = logging.getLogger('werkzeug')
     log.setLevel(logging.ERROR)
 
-    # Optional: Prevent TensorFlow from taking all RAM at once
-    try:
-        import tensorflow as tf
-        gpus = tf.config.experimental.list_physical_devices('GPU')
-        if gpus:
-            for gpu in gpus:
-                tf.config.experimental.set_memory_growth(gpu, True)
-    except Exception:
-        pass
-
     port = int(os.environ.get('PORT', 5000))
 
     print("==========================================")
@@ -149,32 +136,6 @@ if __name__ == '__main__':
     print(f"Port: {port} | Mode: High Stability")
     print("==========================================")
 
-    # Proactive AI Model Pre-loader
-    def preload_models():
-        try:
-            from deepface import DeepFace
-            import numpy as np
-
-            print("Checking AI Models (ArcFace + MediaPipe)...")
-            print("Do not close this window during first-time download.")
-
-            dummy_img = np.zeros((224, 224, 3), dtype=np.uint8)
-            DeepFace.represent(
-                img_path=dummy_img,
-                model_name="ArcFace",
-                detector_backend="retinaface",
-                enforce_detection=False
-            )
-            print("AI Models (RetinaFace + ArcFace) Ready!")
-        except Exception as e:
-            print(f"AI Cache Note: {e}")
-
-    # Render free instances are memory-constrained, so skip heavy model warm-up there.
-    is_render = bool(os.environ.get('RENDER')) or bool(os.environ.get('RENDER_SERVICE_ID')) or bool(os.environ.get('RENDER_EXTERNAL_URL'))
-    if not is_render:
-        import threading
-        threading.Thread(target=preload_models, daemon=True).start()
-    else:
-        print("Skipping AI warm-up on Render to reduce startup memory usage.")
+    # No heavy AI warm-up: we use OpenCV ONNX models that load on-demand.
 
     app.run(debug=False, port=port, threaded=True, host='0.0.0.0')

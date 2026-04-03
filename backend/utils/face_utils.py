@@ -2,7 +2,29 @@ import cv2
 import numpy as np
 import base64
 import os
-from deepface import DeepFace
+
+
+# Face engine selection:
+# - "opencv" (default): YuNet face detector + SFace recognizer (ONNX) via OpenCV.
+# - "deepface": DeepFace ArcFace pipeline (heavy, not suitable for Render free).
+_FACE_ENGINE = (os.environ.get("FACE_ENGINE") or "").strip().lower()
+
+
+def _is_render_env():
+    return bool(os.environ.get("RENDER")) or bool(os.environ.get("RENDER_SERVICE_ID")) or bool(os.environ.get("RENDER_EXTERNAL_URL"))
+
+
+def _default_engine():
+    if _FACE_ENGINE in ("opencv", "deepface"):
+        return _FACE_ENGINE
+    # Prefer the lightweight engine on Render (memory constrained).
+    if _is_render_env():
+        return "opencv"
+    return "opencv"
+
+
+_ENGINE = _default_engine()
+_OPENCV_MODELS = None
 
 
 def _decode_image(img_source):
@@ -22,6 +44,28 @@ def _decode_image(img_source):
         return cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
     return img_source
+
+
+def _get_opencv_models():
+    global _OPENCV_MODELS
+    if _OPENCV_MODELS is not None:
+        return _OPENCV_MODELS
+
+    models_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "ai_models")
+    yunet_path = os.path.abspath(os.path.join(models_dir, "face_detection_yunet.onnx"))
+    sface_path = os.path.abspath(os.path.join(models_dir, "face_recognition_sface.onnx"))
+
+    if not os.path.exists(yunet_path):
+        raise FileNotFoundError(f"Missing YuNet model: {yunet_path}")
+    if not os.path.exists(sface_path):
+        raise FileNotFoundError(f"Missing SFace model: {sface_path}")
+
+    # The detector input size must be set before detection. We'll update per-image.
+    detector = cv2.FaceDetectorYN.create(yunet_path, "", (320, 320))
+    recognizer = cv2.FaceRecognizerSF.create(sface_path, "")
+
+    _OPENCV_MODELS = (detector, recognizer)
+    return _OPENCV_MODELS
 
 
 def _pick_primary_face(face_results):
@@ -70,36 +114,74 @@ def analyze_face(img_source, target_size=(512, 512)):
         if img is None:
             return None
 
-        faces = DeepFace.extract_faces(
-            img_path=img,
-            detector_backend="retinaface",
-            align=False,
-            enforce_detection=True
-        )
-        primary_face = _pick_primary_face(faces)
-        if not primary_face:
-            return None
+        if _ENGINE == "deepface":
+            # Lazy import: DeepFace/TensorFlow are heavy and may not exist in production.
+            from deepface import DeepFace  # type: ignore
 
-        cropped = _crop_face_from_area(img, primary_face.get("facial_area", {}), target_size=target_size)
-        if cropped is None:
-            return None
+            faces = DeepFace.extract_faces(
+                img_path=img,
+                detector_backend="retinaface",
+                align=False,
+                enforce_detection=True
+            )
+            primary_face = _pick_primary_face(faces)
+            if not primary_face:
+                return None
 
-        represent_res = DeepFace.represent(
-            img_path=cropped,
-            model_name="ArcFace",
-            detector_backend="skip",
-            align=True,
-            enforce_detection=False
-        )
-        if not represent_res:
-            return None
+            cropped = _crop_face_from_area(img, primary_face.get("facial_area", {}), target_size=target_size)
+            if cropped is None:
+                return None
 
-        rep = represent_res[0] if isinstance(represent_res, list) else represent_res
-        emb = np.array(rep["embedding"], dtype=np.float32)
-        emb_norm = np.linalg.norm(emb)
-        if emb_norm == 0:
-            return None
-        emb = emb / emb_norm
+            represent_res = DeepFace.represent(
+                img_path=cropped,
+                model_name="ArcFace",
+                detector_backend="skip",
+                align=True,
+                enforce_detection=False
+            )
+            if not represent_res:
+                return None
+
+            rep = represent_res[0] if isinstance(represent_res, list) else represent_res
+            emb = np.array(rep["embedding"], dtype=np.float32)
+            emb_norm = np.linalg.norm(emb)
+            if emb_norm == 0:
+                return None
+            emb = emb / emb_norm
+            facial_area = (primary_face.get("facial_area", {}) or {})
+        else:
+            detector, recognizer = _get_opencv_models()
+
+            h, w = img.shape[:2]
+            detector.setInputSize((w, h))
+            _, faces = detector.detect(img)
+            if faces is None or len(faces) == 0:
+                return None
+
+            # faces: Nx15 -> [x,y,w,h,score, l0x,l0y,...]
+            faces = faces.astype(np.float32)
+            # pick largest face area
+            areas = faces[:, 2] * faces[:, 3]
+            idx = int(np.argmax(areas))
+            face = faces[idx]
+
+            # Align & crop using SFace helper.
+            aligned = recognizer.alignCrop(img, face)
+            if aligned is None or aligned.size == 0:
+                return None
+
+            # Feature extraction
+            feat = recognizer.feature(aligned)
+            if feat is None:
+                return None
+            emb = np.array(feat, dtype=np.float32).flatten()
+            emb_norm = np.linalg.norm(emb)
+            if emb_norm == 0:
+                return None
+            emb = emb / emb_norm
+
+            cropped = cv2.resize(aligned, target_size, interpolation=cv2.INTER_CUBIC)
+            facial_area = {"x": float(face[0]), "y": float(face[1]), "w": float(face[2]), "h": float(face[3])}
 
         gray = cv2.cvtColor(cropped, cv2.COLOR_BGR2GRAY)
         sharpness = float(cv2.Laplacian(gray, cv2.CV_64F).var())
@@ -114,7 +196,7 @@ def analyze_face(img_source, target_size=(512, 512)):
             "embedding": emb.tolist(),
             "face_bytes": buffer.tobytes(),
             "quality": quality,
-            "facial_area": primary_face.get("facial_area", {})
+            "facial_area": facial_area
         }
     except Exception as e:
         print(f"Face Analysis Error: {e}")
