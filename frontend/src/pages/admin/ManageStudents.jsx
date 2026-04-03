@@ -531,47 +531,61 @@ const ManageStudents = () => {
                         setCaptureProgress(0);
                         const video = document.getElementById('admin-cam');
                         if (!video) {
-                            setCapturing(false);
-                            return;
+                          setCapturing(false);
+                          return;
                         }
-                        
-                        const canvas = document.createElement('canvas');
-                        canvas.width = video.videoWidth;
-                        canvas.height = video.videoHeight;
-                        const ctx = canvas.getContext('2d');
-                        
-                        let frames = [];
-                        // Rapid burst capture (5 images) for professional enrollment
-                        for (let i = 0; i < 5; i++) {
-                            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                            frames.push(canvas.toDataURL('image/jpeg', 0.8));
-                            setCaptureProgress(Math.round(((i + 1) / 5) * 100));
-                            if(i < 4) await new Promise(r => setTimeout(r, 400)); // 400ms delay
-                        }
-                        
-                        setPreview(frames[0]);
-                        setCapturedImages(frames);
-                        setSelectedFile(frames[0]); // Keep for update backward compatibility
 
-                        // If we're editing an existing student, update biometrics immediately.
-                        if (activeStudent?.id) {
-                          try {
-                            const token = localStorage.getItem('token');
-                            await axios.post(`${API_BASE}/admin/students/${activeStudent.id}/face`, { image: frames[0] }, {
-                              headers: { Authorization: `Bearer ${token}` }
-                            });
-                            fetchStudents();
-                            alert('Face profile updated successfully');
-                          } catch (err) {
-                            alert(err.response?.data?.msg || 'Face update failed');
+                        try {
+                          const canvas = document.createElement('canvas');
+                          canvas.width = video.videoWidth;
+                          canvas.height = video.videoHeight;
+                          const ctx = canvas.getContext('2d');
+
+                          if (!canvas.width || !canvas.height || !ctx) {
+                            throw new Error('Camera frame not ready. Please try again.');
                           }
-                        }
 
-                        const stream = video.srcObject;
-                        stream?.getTracks().forEach(t => t.stop());
-                        setShowFaceModal(false);
-                        setCapturing(false);
-                        setCaptureProgress(0);
+                          const frames = [];
+                          // Rapid burst capture (5 images) for professional enrollment
+                          for (let i = 0; i < 5; i++) {
+                            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                            frames.push(canvas.toDataURL('image/jpeg', 0.82));
+                            setCaptureProgress(Math.round(((i + 1) / 5) * 100));
+                            if (i < 4) await new Promise(r => setTimeout(r, 350));
+                          }
+
+                          setPreview(frames[0]);
+                          setCapturedImages(frames);
+                          setSelectedFile(frames[0]); // used for legacy update fallback
+
+                          // Close modal immediately so the UI never "sticks" at 100%.
+                          const stream = video.srcObject;
+                          stream?.getTracks().forEach(t => t.stop());
+                          setShowFaceModal(false);
+
+                          // Background upload for existing student (avoid blocking UI / webview timeouts).
+                          if (activeStudent?.id) {
+                            const token = localStorage.getItem('token');
+                            axios.post(
+                              `${API_BASE}/admin/students/${activeStudent.id}/face`,
+                              { image: frames[0] },
+                              {
+                                headers: { Authorization: `Bearer ${token}` },
+                                timeout: 45000
+                              }
+                            ).then(() => {
+                              fetchStudents();
+                              alert('Face profile updated successfully');
+                            }).catch((err) => {
+                              alert(err.response?.data?.msg || 'Face update failed');
+                            });
+                          }
+                        } catch (err) {
+                          alert(err?.message || 'Capture failed');
+                        } finally {
+                          setCapturing(false);
+                          setCaptureProgress(0);
+                        }
                     }} 
                     className="w-full py-5 bg-gradient-to-r from-cyan-600 to-blue-600 rounded-3xl font-black text-xs uppercase text-white shadow-xl shadow-cyan-600/20 relative overflow-hidden"
                 >
