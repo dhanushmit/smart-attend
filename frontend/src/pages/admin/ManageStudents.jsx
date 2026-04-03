@@ -545,11 +545,23 @@ const ManageStudents = () => {
                             throw new Error('Camera frame not ready. Please try again.');
                           }
 
+                          // Downscale for mobile + faster API. Keeps face recognition stable and avoids huge payloads.
+                          const maxDim = 720;
+                          const scale = Math.min(1, maxDim / Math.max(canvas.width || 1, canvas.height || 1));
+                          const outW = Math.round(canvas.width * scale);
+                          const outH = Math.round(canvas.height * scale);
+                          const outCanvas = document.createElement('canvas');
+                          outCanvas.width = outW;
+                          outCanvas.height = outH;
+                          const outCtx = outCanvas.getContext('2d');
+                          if (!outCtx) throw new Error('Canvas error');
+
                           const frames = [];
                           // Rapid burst capture (5 images) for professional enrollment
                           for (let i = 0; i < 5; i++) {
                             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                            frames.push(canvas.toDataURL('image/jpeg', 0.82));
+                            outCtx.drawImage(canvas, 0, 0, outW, outH);
+                            frames.push(outCanvas.toDataURL('image/jpeg', 0.78));
                             setCaptureProgress(Math.round(((i + 1) / 5) * 100));
                             if (i < 4) await new Promise(r => setTimeout(r, 350));
                           }
@@ -566,18 +578,36 @@ const ManageStudents = () => {
                           // Background upload for existing student (avoid blocking UI / webview timeouts).
                           if (activeStudent?.id) {
                             const token = localStorage.getItem('token');
-                            axios.post(
+                            const postFace = () => axios.post(
                               `${API_BASE}/admin/students/${activeStudent.id}/face`,
                               { image: frames[0] },
                               {
                                 headers: { Authorization: `Bearer ${token}` },
-                                timeout: 45000
+                                timeout: 120000
                               }
-                            ).then(() => {
+                            );
+
+                            postFace().then(() => {
                               fetchStudents();
                               alert('Face profile updated successfully');
-                            }).catch((err) => {
-                              alert(err.response?.data?.msg || 'Face update failed');
+                            }).catch(async (err) => {
+                              // Retry once on network/timeout (Render free cold starts can be slow)
+                              if (!err.response) {
+                                await new Promise(r => setTimeout(r, 2500));
+                                try {
+                                  await postFace();
+                                  fetchStudents();
+                                  alert('Face profile updated successfully');
+                                  return;
+                                } catch (err2) {
+                                  const msg2 = err2.response?.data?.msg || err2.message || 'Face update failed';
+                                  alert(msg2);
+                                  return;
+                                }
+                              }
+
+                              const msg = err.response?.data?.msg || err.response?.data?.message || `Face update failed (HTTP ${err.response?.status || '?'})`;
+                              alert(msg);
                             });
                           }
                         } catch (err) {

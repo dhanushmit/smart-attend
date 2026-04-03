@@ -513,7 +513,7 @@ def update_student_face(id):
     from models import FaceEmbedding
 
     student = Student.query.get_or_404(id)
-    data = request.json
+    data = request.get_json(silent=True) or {}
     captured_img_base64 = data.get('image')
     
     if not captured_img_base64:
@@ -525,7 +525,12 @@ def update_student_face(id):
         analysis = analyze_face(captured_img_base64)
 
         if not analysis:
-            return jsonify({"msg": "No face detected in capture. Face not updated."}), 400
+            return jsonify({
+                "msg": "No face detected in capture. Face not updated.",
+                "debug": {
+                    "hint": "Use good light, keep full face inside frame, avoid back camera ultra-wide."
+                }
+            }), 400
 
         embedding = analysis["embedding"]
         face_bytes = analysis["face_bytes"]
@@ -565,7 +570,13 @@ def update_student_face(id):
         return jsonify({"msg": "Face profile updated successfully"}), 200
     except Exception as e:
         db.session.rollback()
-        return jsonify({"msg": f"Face processing error: {str(e)}"}), 500
+        return jsonify({
+            "msg": f"Face processing error: {str(e)}",
+            "debug": {
+                "content_type": request.content_type,
+                "has_json": bool(request.is_json)
+            }
+        }), 500
 
 
 @admin_bp.route('/students/<int:id>/biometric-reset', methods=['POST'])
