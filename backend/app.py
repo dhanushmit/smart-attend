@@ -87,21 +87,21 @@ os.makedirs(db_path, exist_ok=True)
 with app.app_context():
     db.create_all()
 
-    # Lightweight SQLite migrations for dev (no alembic).
+    # Lightweight migrations (no alembic). Ensures new columns exist across SQLite/Postgres.
     try:
-        import sqlite3
+        dialect = db.engine.dialect.name
 
-        if app.config['SQLALCHEMY_DATABASE_URI'].startswith("sqlite:///"):
+        if dialect == "sqlite":
+            import sqlite3
+
             db_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'database', 'attendance.db')
             con = sqlite3.connect(db_file)
             cur = con.cursor()
 
-            # face_embeddings.engine
             cols = [row[1] for row in cur.execute("PRAGMA table_info(face_embeddings)").fetchall()]
             if "engine" not in cols:
                 cur.execute("ALTER TABLE face_embeddings ADD COLUMN engine VARCHAR(20)")
 
-            # students.reference_image_blob + mime
             scol = [row[1] for row in cur.execute("PRAGMA table_info(students)").fetchall()]
             if "reference_image_blob" not in scol:
                 cur.execute("ALTER TABLE students ADD COLUMN reference_image_blob BLOB")
@@ -110,6 +110,15 @@ with app.app_context():
 
             con.commit()
             con.close()
+
+        elif dialect in ("postgresql", "postgres"):
+            # Postgres supports IF NOT EXISTS; safe to run every boot.
+            from sqlalchemy import text
+
+            db.session.execute(text("ALTER TABLE face_embeddings ADD COLUMN IF NOT EXISTS engine VARCHAR(20)"))
+            db.session.execute(text("ALTER TABLE students ADD COLUMN IF NOT EXISTS reference_image_blob BYTEA"))
+            db.session.execute(text("ALTER TABLE students ADD COLUMN IF NOT EXISTS reference_image_mime VARCHAR(50)"))
+            db.session.commit()
     except Exception as mig_err:
         print(f"DB migration warning: {mig_err}")
 
