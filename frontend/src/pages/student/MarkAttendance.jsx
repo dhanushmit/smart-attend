@@ -18,6 +18,12 @@ const MarkAttendance = () => {
     }
   }, [step]);
 
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    window.location.href = '/login';
+  };
+
   const startCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
@@ -141,7 +147,15 @@ const MarkAttendance = () => {
           <ArrowLeft size={20} />
         </button>
         <h2 className="text-xl font-bold text-white uppercase tracking-widest">Quick Verify</h2>
-        <div className="w-12"></div>
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="w-12 h-12 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center justify-center text-red-400 hover:bg-red-500/20 transition-all"
+          aria-label="Logout"
+          title="Logout"
+        >
+          <LogOut size={20} />
+        </button>
       </header>
       
       <AnimatePresence mode="wait">

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Home, Camera, History, User, Bell, Shield, Megaphone } from 'lucide-react';
+import { Home, Camera, History, User, Bell, Shield, Megaphone, LogOut } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import axios from 'axios';
 
@@ -7,6 +7,12 @@ const Navbar = ({ role }) => {
   const location = useLocation();
   const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000';
   const [studentAlertCount, setStudentAlertCount] = useState(0);
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    window.location.href = '/login';
+  };
 
   const navItems = {
     student: [
@@ -77,6 +83,18 @@ const Navbar = ({ role }) => {
             )}
           </NavLink>
         ))}
+
+        {/* Always show logout on all dashboards. */}
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="relative w-12 h-14 rounded-[24px] flex flex-col items-center justify-center gap-0.5 text-slate-400 hover:text-slate-600 transition-all"
+          aria-label="Logout"
+          title="Logout"
+        >
+          <LogOut size={22} />
+          <span className="text-[9px] sm:text-[10px] font-bold tracking-tight uppercase opacity-70">Out</span>
+        </button>
       </nav>
     </div>
   );
