@@ -552,7 +552,21 @@ const ManageStudents = () => {
                         setPreview(frames[0]);
                         setCapturedImages(frames);
                         setSelectedFile(frames[0]); // Keep for update backward compatibility
-                        
+
+                        // If we're editing an existing student, update biometrics immediately.
+                        if (activeStudent?.id) {
+                          try {
+                            const token = localStorage.getItem('token');
+                            await axios.post(`${API_BASE}/admin/students/${activeStudent.id}/face`, { image: frames[0] }, {
+                              headers: { Authorization: `Bearer ${token}` }
+                            });
+                            fetchStudents();
+                            alert('Face profile updated successfully');
+                          } catch (err) {
+                            alert(err.response?.data?.msg || 'Face update failed');
+                          }
+                        }
+
                         const stream = video.srcObject;
                         stream?.getTracks().forEach(t => t.stop());
                         setShowFaceModal(false);

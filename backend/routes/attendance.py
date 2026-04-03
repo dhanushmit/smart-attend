@@ -228,13 +228,19 @@ def verify_face():
                 }
             }), 400
 
-        # Burst verification lets us stay slightly strict while avoiding false rejects.
-        l2_threshold = 1.08
-        is_match = best_distance <= l2_threshold
+        # Burst verification: accept if best is under threshold and we have enough supporting frames.
+        # ArcFace L2 distances vary by camera quality; keep a stable default but allow slight tolerance.
+        l2_threshold = 1.15
+        support_threshold = 1.22
+        valid_distances = [d for d in frame_distances if isinstance(d, (int, float))]
+        support_votes = sum(1 for d in valid_distances if d <= support_threshold)
+        is_match = (best_distance <= l2_threshold) and (support_votes >= 2 or valid_frames <= 1)
         confidence = max(0.0, min(100.0, (1.0 - (best_distance / 1.55)) * 100.0))
         debug_data = {
             "best_distance": round(best_distance, 4),
             "threshold": l2_threshold,
+            "support_threshold": support_threshold,
+            "support_votes": support_votes,
             "frames_requested": len(captured_images),
             "frames_used": valid_frames,
             "stored_profiles": len(stored_embeddings),
@@ -388,7 +394,7 @@ def identify_student():
         }), 400
 
     best_distance, best_student_id = best
-    threshold = 1.08
+    threshold = 1.15
     is_match = best_distance <= threshold
 
     student = Student.query.get(int(best_student_id))
