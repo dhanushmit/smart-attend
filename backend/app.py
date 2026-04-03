@@ -1,6 +1,7 @@
 import os
 
 import io
+from datetime import timedelta
 
 from flask import Flask, send_from_directory, send_file
 from flask_cors import CORS
@@ -26,10 +27,12 @@ if db_uri.startswith("postgres://"):
 
 app.config['SQLALCHEMY_DATABASE_URI'] = db_uri
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['JWT_SECRET_KEY'] = 'smar-attend-secure-system-key-2024-v2'
+# SECURITY: override in Render env vars.
+app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY') or 'dev-insecure-jwt-secret-change-me'
 app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'uploads')
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB Max upload
-app.config['JWT_ACCESS_TOKEN_EXPIRES'] = False
+# SECURITY: tokens should expire (default 7 days).
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=int(os.environ.get("JWT_DAYS", "7")))
 
 # Pre-Flight Diagnostic Log
 print("==========================================")
@@ -65,7 +68,11 @@ def public_student_photo(student_id):
 
     return {"msg": "No photo"}, 404
 
-CORS(app)
+# CORS: allow all by default (mobile webviews can have "null" origins).
+# For strict allowlist: set CORS_ORIGINS="https://smart-attend-three.vercel.app"
+origins_env = (os.environ.get("CORS_ORIGINS") or "").strip()
+origins = [o.strip() for o in origins_env.split(",") if o.strip()] if origins_env else "*"
+CORS(app, resources={r"/*": {"origins": origins}})
 db.init_app(app)
 jwt = JWTManager(app)
 
