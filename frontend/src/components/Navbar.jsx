@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Home, Camera, History, User, Bell, Shield } from 'lucide-react';
+import { Home, Camera, History, User, Bell, Shield, Megaphone } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import axios from 'axios';
 
@@ -18,6 +18,7 @@ const Navbar = ({ role }) => {
     advisor: [
       { path: '/advisor/dashboard', icon: Home, label: 'Dashboard' },
       { path: '/advisor/reports', icon: History, label: 'Reports' },
+      { path: '/advisor/broadcast', icon: Megaphone, label: 'Notify' },
       { path: '/advisor/profile', icon: User, label: 'Profile' },
     ],
     admin: [

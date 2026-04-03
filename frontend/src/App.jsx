@@ -20,14 +20,33 @@ import AdminKiosk from './pages/admin/Kiosk';
 import { useState, useEffect } from 'react';
 
 function App() {
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(() => {
+    try {
+      const savedUser = localStorage.getItem('user');
+      const token = localStorage.getItem('token');
+      if (savedUser && token) return JSON.parse(savedUser);
+    } catch (e) {
+      // ignore
+    }
+    return null;
+  });
 
   useEffect(() => {
-    const savedUser = localStorage.getItem('user');
-    const token = localStorage.getItem('token');
-    if (savedUser && token) {
-      setUser(JSON.parse(savedUser));
-    }
+    // Keep auth state stable across refresh and across tabs/webviews.
+    const sync = () => {
+      try {
+        const savedUser = localStorage.getItem('user');
+        const token = localStorage.getItem('token');
+        if (savedUser && token) setUser(JSON.parse(savedUser));
+        else setUser(null);
+      } catch (e) {
+        setUser(null);
+      }
+    };
+
+    sync();
+    window.addEventListener('storage', sync);
+    return () => window.removeEventListener('storage', sync);
   }, []);
 
   return (

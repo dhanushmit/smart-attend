@@ -20,7 +20,7 @@ const Broadcast = () => {
       const fetchStudentCount = async () => {
         try {
           const token = localStorage.getItem('token');
-          const res = await axios.get(`${API_BASE}/advisor/dashboard`, {
+          const res = await axios.get(`${API_BASE}/advisor/dashboard/stats`, {
             headers: { Authorization: `Bearer ${token}` }
           });
           setStudentCount(res.data?.total_students || 0);

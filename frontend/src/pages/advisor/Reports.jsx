@@ -49,6 +49,29 @@ const AdvisorReports = () => {
     setTimeout(() => window.URL.revokeObjectURL(url), 2000);
   };
 
+  const blobToText = async (blob) => {
+    try {
+      return await new Response(blob).text();
+    } catch {
+      return '';
+    }
+  };
+
+  const extractErrorMessage = async (err, fallback) => {
+    const status = err?.response?.status;
+    const data = err?.response?.data;
+    if (data instanceof Blob) {
+      const text = await blobToText(data);
+      try {
+        const parsed = JSON.parse(text);
+        return parsed?.msg || parsed?.message || fallback || `Export failed (HTTP ${status || '?'})`;
+      } catch {
+        return text?.slice(0, 180) || fallback || `Export failed (HTTP ${status || '?'})`;
+      }
+    }
+    return err?.response?.data?.msg || err?.response?.data?.message || err?.message || fallback || `Export failed (HTTP ${status || '?'})`;
+  };
+
   const handleExport = async (format) => {
     try {
       const token = localStorage.getItem('token');
@@ -65,7 +88,7 @@ const AdvisorReports = () => {
         mime
       );
     } catch (err) {
-      alert(`${format.toUpperCase()} export failed`);
+      alert(await extractErrorMessage(err, `${format.toUpperCase()} export failed`));
     }
   };
 
