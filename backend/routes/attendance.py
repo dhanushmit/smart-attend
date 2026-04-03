@@ -54,17 +54,79 @@ def _student_history_rows(student, limit=30):
             break
     return history
 
+
+def _extract_images_from_request():
+    """
+    Accept images via:
+    - JSON: { images: [dataUrl,...] } or { image: dataUrl }
+    - multipart/form-data: files 'image' / 'images', or fields 'image' / 'images' (base64/dataUrl)
+
+    Returns a list of image sources that `utils.face_utils.get_face_embedding` can handle
+    (dataUrl/base64 string OR raw bytes).
+    """
+    images = []
+
+    # JSON body (preferred for mobile/webview)
+    data = request.get_json(silent=True) or {}
+    if isinstance(data, dict):
+        body_images = data.get("images") or []
+        if not body_images and data.get("image"):
+            body_images = [data.get("image")]
+        if isinstance(body_images, list):
+            images.extend([img for img in body_images if img])
+        elif body_images:
+            images.append(body_images)
+
+    # multipart/form-data (fallback)
+    try:
+        if request.files:
+            for f in (request.files.getlist("images") or []):
+                try:
+                    content = f.read()
+                    if content:
+                        images.append(content)
+                except Exception:
+                    continue
+            f1 = request.files.get("image")
+            if f1:
+                try:
+                    content = f1.read()
+                    if content:
+                        images.append(content)
+                except Exception:
+                    pass
+
+        if request.form:
+            form_images = request.form.getlist("images") or []
+            if not form_images and request.form.get("image"):
+                form_images = [request.form.get("image")]
+            for img in form_images:
+                if img:
+                    images.append(img)
+    except Exception:
+        # Keep verification robust even if request parsing is unusual.
+        pass
+
+    return images
+
+
 @attendance_bp.route('/verify-face', methods=['POST'])
 @jwt_required()
 def verify_face():
     user_id = get_jwt_identity()
-    data = request.get_json() or {}
-    captured_images = data.get('images') or []
-    if not captured_images and data.get('image'):
-        captured_images = [data.get('image')]
+    captured_images = _extract_images_from_request()
 
     if not captured_images:
-        return jsonify({"msg": "Image is required", "verified": False}), 400
+        return jsonify({
+            "msg": "Image is required",
+            "verified": False,
+            "debug": {
+                "content_type": request.content_type,
+                "has_files": bool(request.files),
+                "has_form": bool(request.form),
+                "has_json": bool(request.is_json),
+            }
+        }), 400
 
     student = Student.query.filter_by(user_id=int(user_id)).first()
     if not student:
@@ -257,13 +319,19 @@ def identify_student():
     if not _is_admin_or_advisor(user_id):
         return jsonify({"msg": "Admin/Advisor access required"}), 403
 
-    data = request.get_json() or {}
-    captured_images = data.get('images') or []
-    if not captured_images and data.get('image'):
-        captured_images = [data.get('image')]
+    data = request.get_json(silent=True) or {}
+    captured_images = _extract_images_from_request()
 
     if not captured_images:
-        return jsonify({"msg": "Image is required"}), 400
+        return jsonify({
+            "msg": "Image is required",
+            "debug": {
+                "content_type": request.content_type,
+                "has_files": bool(request.files),
+                "has_form": bool(request.form),
+                "has_json": bool(request.is_json),
+            }
+        }), 400
 
     from datetime import datetime
     from utils.face_utils import get_face_embedding

@@ -15,9 +15,9 @@ const History = () => {
 
   const fetchHistory = async () => {
     try {
-      const user = JSON.parse(localStorage.getItem('user'));
+      const token = localStorage.getItem('token');
       const response = await axios.get(`${API_BASE}/attendance/history`, 
-        { headers: { Authorization: `Bearer ${user.token}` } }
+        { headers: { Authorization: `Bearer ${token}` } }
       );
       setLogs(response.data);
     } catch (err) {

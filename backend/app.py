@@ -67,22 +67,32 @@ with app.app_context():
         for username, password, role, fullname, email in defaults:
             user = User.query.filter_by(username=username).first()
             if not user:
-                user = User(username=username)
+                # Create only if missing. Do NOT overwrite passwords on every restart.
+                user = User(
+                    username=username,
+                    password_hash=generate_password_hash(password),
+                    role=role,
+                    fullname=fullname,
+                    email=email
+                )
                 db.session.add(user)
-            user.password_hash = generate_password_hash(password)
-            user.role = role
-            user.fullname = fullname
-            user.email = email
+            else:
+                # Fill in any missing fields, but never clobber password changes.
+                user.role = user.role or role
+                user.fullname = user.fullname or fullname
+                user.email = user.email or email
             users[username] = user
 
         db.session.flush()
 
         default_class = Class.query.filter_by(name='CSE-A').first()
         if not default_class:
-            default_class = Class(name='CSE-A')
+            default_class = Class(name='CSE-A', advisor_id=users['advisor'].id)
             db.session.add(default_class)
             db.session.flush()
-        default_class.advisor_id = users['advisor'].id
+        elif default_class.advisor_id is None:
+            # Avoid overwriting admin allocation changes.
+            default_class.advisor_id = users['advisor'].id
 
         student_defaults = [
             (users['student'], '2024ST001'),
@@ -94,8 +104,9 @@ with app.app_context():
             if not student:
                 student = Student(user_id=user.id)
                 db.session.add(student)
-            student.class_id = default_class.id
-            student.roll_no = roll_no
+            # Only set defaults when missing; do not overwrite admin updates.
+            student.class_id = student.class_id or default_class.id
+            student.roll_no = student.roll_no or roll_no
 
         db.session.commit()
 
@@ -159,7 +170,8 @@ if __name__ == '__main__':
             print(f"AI Cache Note: {e}")
 
     # Render free instances are memory-constrained, so skip heavy model warm-up there.
-    if not os.environ.get('RENDER'):
+    is_render = bool(os.environ.get('RENDER')) or bool(os.environ.get('RENDER_SERVICE_ID')) or bool(os.environ.get('RENDER_EXTERNAL_URL'))
+    if not is_render:
         import threading
         threading.Thread(target=preload_models, daemon=True).start()
     else:
