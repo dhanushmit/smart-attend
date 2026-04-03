@@ -54,7 +54,7 @@ const Navbar = ({ role }) => {
   }, [role, location.pathname]);
 
   return (
-    <div className="fixed bottom-4 left-0 right-0 flex justify-center px-3 sm:px-6 pointer-events-none z-[100]">
+    <div className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-0 right-0 flex justify-center px-3 sm:px-6 pointer-events-none z-[100]">
       <nav className="flex w-full max-w-md items-center justify-between gap-1 bg-white/90 premium-blur min-h-[72px] px-2 sm:px-4 rounded-[32px] shadow-2xl shadow-indigo-500/10 border border-white/50 pointer-events-auto">
         {items.map((item) => (
           <NavLink

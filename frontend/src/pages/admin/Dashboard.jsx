@@ -44,7 +44,7 @@ const AdminDashboard = () => {
     <div className="p-6">
       <header className="mb-8 flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold font-outfit">Admin Console 🛡️</h2>
+          <h2 className="text-2xl font-bold font-outfit">Admin Console</h2>
           <p className="text-slate-400 text-sm">Real-time System Overview</p>
         </div>
         <button className="p-3 bg-white/5 rounded-2xl border border-white/10 hover:bg-white/10 transition-all">

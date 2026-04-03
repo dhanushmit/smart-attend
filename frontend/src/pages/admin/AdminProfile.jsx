@@ -121,7 +121,8 @@ const AdminProfile = () => {
                         </button>
                     </GlassCard>
 
-                    <button 
+                    <button
+                        type="button"
                         onClick={handleLogout}
                         className="w-full p-4 bg-red-500/10 border border-red-500/20 rounded-3xl flex items-center justify-between hover:bg-red-500/20 transition-all group mt-6"
                     >

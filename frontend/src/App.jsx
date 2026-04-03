@@ -51,7 +51,7 @@ function App() {
 
   return (
     <Router>
-      <div className="min-h-screen relative pb-20 bg-slate-950 text-white selection:bg-cyan-500/30 selection:text-cyan-400">
+      <div className="min-h-screen relative pb-[calc(96px+env(safe-area-inset-bottom))] bg-slate-950 text-white selection:bg-cyan-500/30 selection:text-cyan-400">
         <Routes>
           <Route path="/login" element={<Login setUser={setUser} />} />
           
