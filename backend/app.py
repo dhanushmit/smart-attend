@@ -2,6 +2,7 @@ import os
 
 import io
 from datetime import timedelta
+from urllib.parse import urlsplit, urlunsplit
 
 from flask import Flask, send_from_directory, send_file
 from flask_cors import CORS
@@ -41,6 +42,23 @@ print(f"Upload Path: {app.config['UPLOAD_FOLDER']}")
 print("Bio-Stack: MediaPipe + InsightFace(ArcFace)")
 print("Security: JWT-HMAC-SHA256 (32B Mode)")
 print("==========================================")
+
+def _mask_db_url(url: str) -> str:
+    """
+    Mask password in a DB URL for safe logging.
+    Example: postgresql://user:pass@host/db -> postgresql://user:***@host/db
+    """
+    try:
+        parts = urlsplit(url)
+        if not parts.username or parts.password is None:
+            return url
+        netloc = parts.netloc.replace(f":{parts.password}@", ":***@")
+        return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+    except Exception:
+        return "<unparseable-db-url>"
+
+_using_external_db = bool(os.environ.get("DATABASE_URL"))
+print(f"DB Config: using_external_db={_using_external_db} uri={_mask_db_url(db_uri)}")
 
 os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'students'), exist_ok=True)
 
