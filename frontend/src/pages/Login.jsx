@@ -152,6 +152,10 @@ const Login = ({ setUser }) => {
                 Backend may be sleeping (Render Free). Tap login once, wait up to 1 minute, then retry.
             </p>
         )}
+
+        <p className="text-center mt-8 text-[10px] tracking-[0.25em] text-slate-500/50 select-none">
+          Developed by Dhanush
+        </p>
       </motion.div>
     </div>
   );
