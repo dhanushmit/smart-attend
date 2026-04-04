@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import GlassCard from '../../components/GlassCard';
 import Navbar from '../../components/Navbar';
-import { Search, UserPlus, Edit2, Trash2, ArrowLeft, Camera, X, Mail, Phone, Hash } from 'lucide-react';
+import { Search, Edit2, Trash2, ArrowLeft, X, Mail, Hash } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
@@ -11,17 +11,13 @@ const ManageStudentsAdv = () => {
   const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000';
   const [students, setStudents] = useState([]);
   const [search, setSearch] = useState('');
-  const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [editingStudent, setEditingStudent] = useState(null);
   const [formData, setFormData] = useState({
-    username: '',
     fullname: '',
     email: '',
-    roll_no: '',
-    password: 'password123'
+    roll_no: ''
   });
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [preview, setPreview] = useState(null);
 
   const fetchStudents = async () => {
     try {
@@ -39,41 +35,25 @@ const ManageStudentsAdv = () => {
     fetchStudents();
   }, []);
 
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setSelectedFile(file);
-      setPreview(URL.createObjectURL(file));
-    }
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     const token = localStorage.getItem('token');
-    const data = new FormData();
-    Object.keys(formData).forEach(key => data.append(key, formData[key]));
-    if (selectedFile) data.append('image', selectedFile);
+    if (!editingStudent) {
+      alert("Advisors cannot add new students. Please ask admin to enroll.");
+      return;
+    }
 
     try {
-      if (editingStudent) {
-        await axios.put(`${API_BASE}/advisor/students/${editingStudent.id}`, data, {
-          headers: { 
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'multipart/form-data'
-          }
-        });
-      } else {
-        await axios.post(`${API_BASE}/advisor/students`, data, {
-          headers: { 
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'multipart/form-data'
-          }
-        });
-      }
-      setShowAddModal(false);
+      await axios.put(`${API_BASE}/advisor/students/${editingStudent.id}`, {
+        fullname: formData.fullname,
+        email: formData.email,
+        roll_no: formData.roll_no,
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      setShowEditModal(false);
       setEditingStudent(null);
-      setSelectedFile(null);
-      setPreview(null);
       fetchStudents();
     } catch (err) {
       alert("Action failed");
@@ -96,13 +76,11 @@ const ManageStudentsAdv = () => {
   const openEdit = (student) => {
     setEditingStudent(student);
     setFormData({
-        username: student.username || '',
         fullname: student.fullname,
         email: student.email,
-        roll_no: student.roll_no,
-        image: student.image || ''
+        roll_no: student.roll_no
     });
-    setShowAddModal(true);
+    setShowEditModal(true);
   };
 
   const filtered = students.filter(s => 
@@ -118,7 +96,7 @@ const ManageStudentsAdv = () => {
         </button>
         <div>
           <h2 className="text-xl font-bold font-outfit">My Class Students</h2>
-          <p className="text-xs text-slate-400 font-bold uppercase tracking-widest text-cyan-500">Manage Enrollment</p>
+          <p className="text-xs text-slate-400 font-bold uppercase tracking-widest text-cyan-500">View & Update</p>
         </div>
       </header>
 
@@ -133,12 +111,6 @@ const ManageStudentsAdv = () => {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <button 
-          onClick={() => { setEditingStudent(null); setFormData({username:'', fullname:'', email:'', roll_no:'', password:'password123', image:''}); setShowAddModal(true); }}
-          className="bg-cyan-600 p-4 rounded-[2rem] flex items-center justify-center hover:bg-cyan-500 transition-all shadow-lg shadow-cyan-500/20"
-        >
-          <UserPlus size={24} />
-        </button>
       </div>
 
       <div className="space-y-4">
@@ -175,7 +147,7 @@ const ManageStudentsAdv = () => {
       </div>
 
       <AnimatePresence>
-        {showAddModal && (
+        {showEditModal && (
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -190,13 +162,13 @@ const ManageStudentsAdv = () => {
               <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-cyan-500 to-transparent shadow-[0_0_15px_rgba(6,182,212,0.5)]"></div>
               
               <button 
-                onClick={() => setShowAddModal(false)}
+                onClick={() => setShowEditModal(false)}
                 className="absolute top-6 right-6 p-2 text-slate-500 hover:text-white bg-white/5 rounded-full"
               >
                 <X size={20} />
               </button>
               
-              <h3 className="text-2xl font-bold mb-6 font-outfit">{editingStudent ? 'Edit Profile' : 'Enroll Student'}</h3>
+              <h3 className="text-2xl font-bold mb-6 font-outfit">Edit Profile</h3>
               
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-4">
@@ -230,41 +202,6 @@ const ManageStudentsAdv = () => {
                         onChange={(e) => setFormData({...formData, email: e.target.value})}
                     />
                   </div>
-                  {!editingStudent && (
-                    <input 
-                      type="text" 
-                      placeholder="Username for login"
-                      required
-                      className="w-full bg-slate-800/50 border border-white/5 rounded-3xl py-4 px-6 text-sm focus:border-cyan-500/50 outline-none"
-                      value={formData.username}
-                      onChange={(e) => setFormData({...formData, username: e.target.value})}
-                    />
-                  )}
-                  
-                  <div className="space-y-3">
-                    <label className="text-[10px] uppercase font-bold text-slate-500 ml-2">Verification Profile Photo</label>
-                    <div className="flex items-center gap-4 p-4 bg-slate-800/50 border border-white/5 rounded-3xl">
-                        <div className="relative w-16 h-16 rounded-xl bg-slate-900 flex items-center justify-center overflow-hidden border border-white/10">
-                            {preview ? (
-                                <img src={preview} alt="Selected" className="w-full h-full object-cover" />
-                            ) : (
-                                <Camera className="text-slate-600" size={24} />
-                            )}
-                            <input 
-                                type="file" 
-                                accept="image/*"
-                                onChange={handleFileChange}
-                                className="absolute inset-0 opacity-0 cursor-pointer"
-                            />
-                        </div>
-                        <div className="flex flex-col">
-                            <span className="text-xs font-bold text-slate-300">
-                                {selectedFile ? selectedFile.name : 'No photo chosen'}
-                            </span>
-                            <span className="text-[9px] text-slate-500 uppercase font-black mt-1">For face verification engine</span>
-                        </div>
-                    </div>
-                  </div>
                 </div>
 
                 <div className="pt-6">
@@ -272,7 +209,7 @@ const ManageStudentsAdv = () => {
                         type="submit"
                         className="w-full py-4 bg-cyan-600 rounded-[2rem] font-bold shadow-xl shadow-cyan-500/20 hover:bg-cyan-500 hover:scale-[1.02] active:scale-[0.98] transition-all font-outfit text-lg"
                     >
-                        {editingStudent ? 'Update Details' : 'Initialize Enrollment'}
+                        Update Details
                     </button>
                 </div>
               </form>

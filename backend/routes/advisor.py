@@ -188,7 +188,7 @@ def get_advisor_stats():
         "today_absent": today_absent
     })
 
-@advisor_bp.route('/students', methods=['GET', 'POST'])
+@advisor_bp.route('/students', methods=['GET'])
 @jwt_required()
 def manage_students():
     user_id = get_jwt_identity()
@@ -200,67 +200,31 @@ def manage_students():
     if not cls:
         return jsonify({"msg": "No class assigned"}), 404
 
-    if request.method == 'GET':
-        students = Student.query.filter_by(class_id=cls.id).all()
-        result = []
-        for s in students:
-            _, absent, attendance_pct = _student_attendance_metrics(s)
-            
-            # Today's status
-            today = datetime.utcnow().date()
-            att_today = Attendance.query.filter_by(student_id=s.id, date=today).first()
-            
-            image_url = _upload_url(s.reference_image_path)
-            if getattr(s, "reference_image_blob", None) or s.reference_image_path:
-                image_url = _student_photo_url(s)
+    students = Student.query.filter_by(class_id=cls.id).all()
+    result = []
+    for s in students:
+        _, absent, attendance_pct = _student_attendance_metrics(s)
 
-            result.append({
-                "id": s.id,
-                "fullname": s.user.fullname,
-                "roll_no": s.roll_no,
-                "username": s.user.username,
-                "email": s.user.email,
-                "attendance": f"{round(attendance_pct)}%",
-                "status": att_today.status.capitalize() if att_today else "Absent",
-                "absent": absent,
-                "image": image_url
-            })
-        return jsonify(result)
+        # Today's status
+        today = datetime.utcnow().date()
+        att_today = Attendance.query.filter_by(student_id=s.id, date=today).first()
 
-    if request.method == 'POST':
-        data = request.form
-        file = request.files.get('image')
+        image_url = _upload_url(s.reference_image_path)
+        if getattr(s, "reference_image_blob", None) or s.reference_image_path:
+            image_url = _student_photo_url(s)
 
-        # Check if username exists
-        if User.query.filter_by(username=data['username']).first():
-            return jsonify({"msg": "Username already exists"}), 400
-
-        new_user = User(
-            username=data['username'],
-            password_hash=generate_password_hash(data.get('password', 'password123')),
-            role='student',
-            fullname=data['fullname'],
-            email=data['email']
-        )
-        db.session.add(new_user)
-        db.session.commit()
-        
-        filename = None
-        if file:
-            filename = f"students/{new_user.id}_{file.filename}"
-            from flask import current_app
-            file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
-            file.save(file_path)
-
-        new_student = Student(
-            user_id=new_user.id,
-            roll_no=data['roll_no'],
-            class_id=cls.id,
-            reference_image_path=filename
-        )
-        db.session.add(new_student)
-        db.session.commit()
-        return jsonify({"msg": "Student added to class"}), 201
+        result.append({
+            "id": s.id,
+            "fullname": s.user.fullname,
+            "roll_no": s.roll_no,
+            "username": s.user.username,
+            "email": s.user.email,
+            "attendance": f"{round(attendance_pct)}%",
+            "status": att_today.status.capitalize() if att_today else "Absent",
+            "absent": absent,
+            "image": image_url
+        })
+    return jsonify(result)
 
 @advisor_bp.route('/students/<int:id>', methods=['PUT', 'DELETE'])
 @jwt_required()
