@@ -62,13 +62,18 @@ def _attendance_rows(filter_type="all", class_id=None):
     now = datetime.utcnow()
     session_dates = _all_session_dates(class_id)
 
+    # Anchor reporting windows to the most recent session date we have,
+    # not "today" (UTC). This avoids empty reports due to timezone differences
+    # and also makes "daily" mean "latest available day" which matches user expectations.
+    anchor_date = max(session_dates) if session_dates else now.date()
+
     if filter_type == 'daily':
-        session_dates = [d for d in session_dates if d == now.date()]
+        session_dates = [d for d in session_dates if d == anchor_date]
     elif filter_type == 'weekly':
-        one_week_ago = now.date() - timedelta(days=7)
+        one_week_ago = anchor_date - timedelta(days=7)
         session_dates = [d for d in session_dates if d >= one_week_ago]
     elif filter_type == 'monthly':
-        one_month_ago = now.date() - timedelta(days=30)
+        one_month_ago = anchor_date - timedelta(days=30)
         session_dates = [d for d in session_dates if d >= one_month_ago]
 
     students_query = Student.query
@@ -772,7 +777,12 @@ def get_attendance_history():
             df.to_excel(writer, index=False, sheet_name='Attendance')
             summary_df.to_excel(writer, index=False, sheet_name='Summary')
         output.seek(0)
-        return send_file(output, download_name=f"Admin_Report_{filter_type}.xlsx", as_attachment=True)
+        return send_file(
+            output,
+            download_name=f"Admin_Report_{filter_type}.xlsx",
+            as_attachment=True,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
     
     elif export_format == 'pdf':
         output = _build_pdf_report(data, filter_type)

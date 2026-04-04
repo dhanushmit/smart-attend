@@ -5,6 +5,7 @@ import Navbar from '../../components/Navbar';
 import { ArrowLeft, BarChart3, PieChart, Calendar, Search, Download, CheckCircle, XCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { downloadBlobSmart, extractAxiosBlobErrorMessage } from '../../utils/download';
 
 const AttendanceAnalyticsAdv = () => {
     const navigate = useNavigate();
@@ -54,15 +55,13 @@ const AttendanceAnalyticsAdv = () => {
             const mime = format === 'pdf'
                 ? 'application/pdf'
                 : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-            const url = window.URL.createObjectURL(new Blob([response.data], { type: mime }));
-            const link = document.createElement('a');
-            link.href = url;
-            link.setAttribute('download', `Advisor_${timeframe}_report.${format}`);
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
+            await downloadBlobSmart(
+                new Blob([response.data], { type: mime }),
+                `Advisor_${timeframe}_report.${format === 'pdf' ? 'pdf' : 'xlsx'}`,
+                mime
+            );
         } catch (err) {
-            alert(`${format.toUpperCase()} export failed`);
+            alert(await extractAxiosBlobErrorMessage(err, `${format.toUpperCase()} export failed`));
         }
     };
 
@@ -127,7 +126,15 @@ const AttendanceAnalyticsAdv = () => {
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Filter by name or roll..."
               className="w-full bg-white/5 border border-white/10 rounded-2xl py-3 pl-11 pr-4 text-sm focus:border-cyan-400 outline-none transition-all text-white"
+              list="advisor-analytics-suggestions"
             />
+            <datalist id="advisor-analytics-suggestions">
+              {Array.from(new Set(
+                records.flatMap(r => [r?.student_name, r?.roll_no]).filter(Boolean)
+              )).slice(0, 30).map((v) => (
+                <option key={v} value={v} />
+              ))}
+            </datalist>
           </div>
         </div>
 

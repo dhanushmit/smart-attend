@@ -51,7 +51,12 @@ const Navbar = ({ role }) => {
       }
     };
     fetchAlertCount();
-  }, [role, location.pathname]);
+
+    // Keep the badge live without needing navigation.
+    // WebView users often stay on the same page while messages arrive.
+    const id = setInterval(fetchAlertCount, 30000);
+    return () => clearInterval(id);
+  }, [role, location.pathname, API_BASE]);
 
   return (
     <div className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-0 right-0 flex justify-center px-3 sm:px-6 pointer-events-none z-[100]">

@@ -89,16 +89,17 @@ def _advisor_export_pdf(data, class_name):
 
 
 def _advisor_attendance_rows(cls, filter_type="all"):
-    now = datetime.utcnow().date()
     session_dates = _class_session_dates(cls.id)
 
+    anchor_date = max(session_dates) if session_dates else datetime.utcnow().date()
+
     if filter_type == 'daily':
-        session_dates = [d for d in session_dates if d == now]
+        session_dates = [d for d in session_dates if d == anchor_date]
     elif filter_type == 'weekly':
-        one_week_ago = now - timedelta(days=7)
+        one_week_ago = anchor_date - timedelta(days=7)
         session_dates = [d for d in session_dates if d >= one_week_ago]
     elif filter_type == 'monthly':
-        one_month_ago = now - timedelta(days=30)
+        one_month_ago = anchor_date - timedelta(days=30)
         session_dates = [d for d in session_dates if d >= one_month_ago]
 
     students = Student.query.filter_by(class_id=cls.id).all()
@@ -275,22 +276,27 @@ def update_delete_student(id):
 @jwt_required()
 def send_announcement():
     user_id = get_jwt_identity()
-    data = request.json
+    data = request.get_json(silent=True) or {}
     cls = Class.query.filter_by(advisor_id=int(user_id)).first()
     if not cls:
         return jsonify({"msg": "No class assigned"}), 404
+
+    message = (data.get("message") or "").strip()
+    urgent = bool(data.get("urgent"))
+    if not message:
+        return jsonify({"msg": "Message is required"}), 400
     
     # Send to all students in the class
     students = Student.query.filter_by(class_id=cls.id).all()
     for s in students:
         notif = Notification(
             user_id=s.user_id,
-            message=data['message'],
-            type='alert' if data.get('urgent') else 'info'
+            message=message,
+            type='alert' if urgent else 'info'
         )
         db.session.add(notif)
     db.session.commit()
-    return jsonify({"msg": "Announcement sent"}), 200
+    return jsonify({"msg": "Announcement sent", "sent_to": len(students)}), 200
 
 @advisor_bp.route('/reports/export', methods=['GET'])
 @jwt_required()
@@ -316,7 +322,12 @@ def export_report():
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df.to_excel(writer, index=False, sheet_name='Attendance')
         output.seek(0)
-        return send_file(output, download_name=f"Class_Report_{cls.name}.xlsx", as_attachment=True)
+        return send_file(
+            output,
+            download_name=f"Class_Report_{cls.name}.xlsx",
+            as_attachment=True,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
 
     output = _advisor_export_pdf(data, cls.name)
     return send_file(output, download_name=f"Class_Report_{cls.name}.pdf", as_attachment=True, mimetype='application/pdf')

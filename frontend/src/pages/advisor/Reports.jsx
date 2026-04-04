@@ -4,6 +4,7 @@ import Navbar from '../../components/Navbar';
 import { Search, ArrowLeft, Filter, CheckCircle, XCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { downloadBlobSmart, extractAxiosBlobErrorMessage } from '../../utils/download';
 
 const AdvisorReports = () => {
   const navigate = useNavigate();
@@ -30,48 +31,6 @@ const AdvisorReports = () => {
     fetchHistory();
   }, [timeframe]);
 
-  const downloadBlob = async (blob, filename, mimeType) => {
-    const file = new File([blob], filename, { type: mimeType });
-
-    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({ files: [file], title: filename });
-      return;
-    }
-
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', filename);
-    link.setAttribute('target', '_blank');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    setTimeout(() => window.URL.revokeObjectURL(url), 2000);
-  };
-
-  const blobToText = async (blob) => {
-    try {
-      return await new Response(blob).text();
-    } catch {
-      return '';
-    }
-  };
-
-  const extractErrorMessage = async (err, fallback) => {
-    const status = err?.response?.status;
-    const data = err?.response?.data;
-    if (data instanceof Blob) {
-      const text = await blobToText(data);
-      try {
-        const parsed = JSON.parse(text);
-        return parsed?.msg || parsed?.message || fallback || `Export failed (HTTP ${status || '?'})`;
-      } catch {
-        return text?.slice(0, 180) || fallback || `Export failed (HTTP ${status || '?'})`;
-      }
-    }
-    return err?.response?.data?.msg || err?.response?.data?.message || err?.message || fallback || `Export failed (HTTP ${status || '?'})`;
-  };
-
   const handleExport = async (format) => {
     try {
       const token = localStorage.getItem('token');
@@ -82,13 +41,13 @@ const AdvisorReports = () => {
       const mime = format === 'pdf'
         ? 'application/pdf'
         : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-      await downloadBlob(
+      await downloadBlobSmart(
         new Blob([response.data], { type: mime }),
         `Advisor_Report_${timeframe}.${format === 'pdf' ? 'pdf' : 'xlsx'}`,
         mime
       );
     } catch (err) {
-      alert(await extractErrorMessage(err, `${format.toUpperCase()} export failed`));
+      alert(await extractAxiosBlobErrorMessage(err, `${format.toUpperCase()} export failed`));
     }
   };
 
@@ -150,7 +109,15 @@ const AdvisorReports = () => {
             className="w-full bg-white/5 border border-white/10 rounded-2xl py-3 pl-11 pr-4 text-sm focus:border-cyan-500 outline-none transition-all text-white"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            list="advisor-report-suggestions"
           />
+          <datalist id="advisor-report-suggestions">
+            {Array.from(new Set(
+              records.flatMap(r => [r?.student_name, r?.roll_no]).filter(Boolean)
+            )).slice(0, 30).map((v) => (
+              <option key={v} value={v} />
+            ))}
+          </datalist>
         </div>
         <button className="bg-white/5 p-3 rounded-2xl border border-white/10 text-slate-400">
           <Filter size={20} />

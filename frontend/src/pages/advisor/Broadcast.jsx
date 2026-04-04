@@ -37,10 +37,15 @@ const Broadcast = () => {
       setError('');
       try {
         const token = localStorage.getItem('token');
-        await axios.post(`${API_BASE}/advisor/announcements`, { message, urgent }, {
+        const res = await axios.post(`${API_BASE}/advisor/announcements`, { message, urgent }, {
           headers: { Authorization: `Bearer ${token}` }
         });
         setSuccess(true);
+        const sentTo = res.data?.sent_to;
+        if (typeof sentTo === 'number') {
+          setError(`Sent to ${sentTo} student${sentTo === 1 ? '' : 's'}.`);
+          setTimeout(() => setError(''), 2500);
+        }
         setMessage('');
         setTimeout(() => setSuccess(false), 3000);
       } catch (err) {
