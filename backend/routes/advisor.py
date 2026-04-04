@@ -8,7 +8,7 @@ import pandas as pd
 import os
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Spacer, Paragraph
 
 advisor_bp = Blueprint('advisor', __name__)
@@ -49,38 +49,55 @@ def _advisor_export_pdf(data, class_name):
     output = io.BytesIO()
     doc = SimpleDocTemplate(output, pagesize=landscape(A4), leftMargin=20, rightMargin=20, topMargin=20, bottomMargin=20)
     styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(name="CellSmall", parent=styles["BodyText"], fontName="Helvetica", fontSize=8, leading=9))
+    styles.add(ParagraphStyle(name="CellSmallBold", parent=styles["BodyText"], fontName="Helvetica-Bold", fontSize=8, leading=9))
     total = len(data)
     present = sum(1 for row in data if row["Status"] == "Present")
     absent = sum(1 for row in data if row["Status"] == "Absent")
+    verified = sum(1 for row in data if (row.get("Verified") in ("Yes", "True", True)))
 
     elements = [
         Paragraph(f"Class Attendance Report - {class_name}", styles["Title"]),
         Spacer(1, 8),
-        Paragraph(f"Total Rows: {total} | Present: {present} | Absent: {absent}", styles["Heading3"]),
+        Paragraph(f"Total Rows: {total} | Present: {present} | Absent: {absent} | Verified: {verified}", styles["Heading3"]),
         Spacer(1, 12),
     ]
 
-    table_data = [["S.No", "Student Name", "Roll No", "Date", "Time", "Status"]]
+    table_data = [["S.No", "Student Name", "Roll No", "Date", "Time", "Status", "Verified"]]
     for index, row in enumerate(data, start=1):
         table_data.append([
             index,
-            row["Student"],
+            Paragraph(str(row["Student"]), styles["CellSmall"]),
             row["Roll No"],
             row["Date"],
             row["Time"],
             row["Status"],
+            row.get("Verified", "No"),
         ])
 
-    table = Table(table_data, repeatRows=1, colWidths=[40, 150, 80, 100, 70, 80])
+    table_data.append([
+        "",
+        Paragraph("TOTAL", styles["CellSmallBold"]),
+        "",
+        "",
+        "",
+        Paragraph(f"Present: {present} / Absent: {absent}", styles["CellSmallBold"]),
+        Paragraph(f"Verified: {verified}", styles["CellSmallBold"]),
+    ])
+
+    table = Table(table_data, repeatRows=1, colWidths=[40, 190, 80, 100, 70, 90, 70])
     table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f2937")),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("ALIGN", (1, 1), (1, -1), "LEFT"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#d1d5db")),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f3f4f6")]),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -2), [colors.white, colors.HexColor("#f3f4f6")]),
+        ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#e5e7eb")),
+        ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
     ]))
     elements.append(table)
     doc.build(elements)
@@ -313,7 +330,8 @@ def export_report():
         "Roll No": row["roll_no"],
         "Date": row["date"],
         "Time": row["time"],
-        "Status": row["status"].capitalize()
+        "Status": row["status"].capitalize(),
+        "Verified": "Yes" if row.get("verified") else "No",
     } for row in rows]
     
     df = pd.DataFrame(data)
@@ -321,6 +339,32 @@ def export_report():
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df.to_excel(writer, index=False, sheet_name='Attendance')
+
+            try:
+                wb = writer.book
+                from openpyxl.styles import Font, Alignment
+                from openpyxl.utils import get_column_letter
+
+                ws = wb["Attendance"]
+                ws.freeze_panes = "A2"
+                ws.auto_filter.ref = ws.dimensions
+
+                header_font = Font(bold=True)
+                for cell in ws[1]:
+                    cell.font = header_font
+                    cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+                for col_idx, col_cells in enumerate(ws.columns, start=1):
+                    max_len = 0
+                    for c in list(col_cells)[:250]:
+                        try:
+                            v = "" if c.value is None else str(c.value)
+                            max_len = max(max_len, len(v))
+                        except Exception:
+                            continue
+                    ws.column_dimensions[get_column_letter(col_idx)].width = min(max(10, max_len + 2), 36)
+            except Exception as xlsx_style_err:
+                print(f"XLSX style warning: {xlsx_style_err}")
         output.seek(0)
         return send_file(
             output,

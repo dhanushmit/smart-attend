@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import GlassCard from '../../components/GlassCard';
 import Navbar from '../../components/Navbar';
@@ -45,6 +45,15 @@ const AttendanceAnalyticsAdv = () => {
         fetchAnalytics();
     }, [API_BASE, timeframe]);
 
+    const suggestions = useMemo(() => {
+        const q = (search || '').trim().toLowerCase();
+        if (!q) return [];
+        const pool = Array.from(new Set(
+            records.flatMap(r => [r?.student_name, r?.roll_no]).filter(Boolean)
+        ));
+        return pool.filter(v => String(v).toLowerCase().includes(q)).slice(0, 8);
+    }, [records, search]);
+
     const handleExport = async (format) => {
         try {
             const token = localStorage.getItem('token');
@@ -80,7 +89,7 @@ const AttendanceAnalyticsAdv = () => {
             <div className="min-w-0">
                 <h2 className="text-xl font-bold font-outfit text-cyan-400">Class Analytics</h2>
                 <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">
-                    {className ? `${className} • ` : ''}Timeframe: {timeframe.toUpperCase()}
+                    {className ? `${className} - ` : ''}Timeframe: {timeframe.toUpperCase()}
                 </p>
             </div>
           </div>
@@ -126,15 +135,21 @@ const AttendanceAnalyticsAdv = () => {
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Filter by name or roll..."
               className="w-full bg-white/5 border border-white/10 rounded-2xl py-3 pl-11 pr-4 text-sm focus:border-cyan-400 outline-none transition-all text-white"
-              list="advisor-analytics-suggestions"
             />
-            <datalist id="advisor-analytics-suggestions">
-              {Array.from(new Set(
-                records.flatMap(r => [r?.student_name, r?.roll_no]).filter(Boolean)
-              )).slice(0, 30).map((v) => (
-                <option key={v} value={v} />
-              ))}
-            </datalist>
+            {suggestions.length > 0 && (
+              <div className="absolute top-full left-0 right-0 mt-2 z-20 rounded-2xl border border-white/10 bg-slate-950/95 premium-blur shadow-2xl shadow-black/50 overflow-hidden">
+                {suggestions.map((v) => (
+                  <button
+                    type="button"
+                    key={v}
+                    onClick={() => setSearch(String(v))}
+                    className="w-full text-left px-4 py-3 text-sm text-slate-100 hover:bg-white/5 transition-colors"
+                  >
+                    {v}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -164,7 +179,7 @@ const AttendanceAnalyticsAdv = () => {
                 <h4 className="font-bold text-sm text-white truncate">{record.student_name}</h4>
                 <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-1">
                   <span className="uppercase font-bold tracking-widest text-slate-500">{record.roll_no}</span>
-                  <span>•</span>
+                  <span>-</span>
                   <span>{record.date} {record.time}</span>
                 </div>
               </div>

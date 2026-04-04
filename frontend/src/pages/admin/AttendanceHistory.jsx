@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import GlassCard from '../../components/GlassCard';
 import Navbar from '../../components/Navbar';
@@ -31,6 +31,15 @@ const AttendanceHistory = () => {
     useEffect(() => {
         fetchHistory();
     }, [timeframe]);
+
+    const suggestions = useMemo(() => {
+        const q = (search || '').trim().toLowerCase();
+        if (!q) return [];
+        const pool = Array.from(new Set(
+            records.flatMap(r => [r?.student_name, r?.roll_no]).filter(Boolean)
+        ));
+        return pool.filter(v => String(v).toLowerCase().includes(q)).slice(0, 8);
+    }, [records, search]);
 
     const handleExport = async (format) => {
         const token = localStorage.getItem('token');
@@ -123,15 +132,21 @@ const AttendanceHistory = () => {
               className="w-full bg-white/5 border border-white/10 rounded-2xl py-3 pl-11 pr-4 text-sm focus:border-amber-500 outline-none transition-all text-white"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              list="admin-history-suggestions"
             />
-            <datalist id="admin-history-suggestions">
-              {Array.from(new Set(
-                records.flatMap(r => [r?.student_name, r?.roll_no]).filter(Boolean)
-              )).slice(0, 30).map((v) => (
-                <option key={v} value={v} />
-              ))}
-            </datalist>
+            {suggestions.length > 0 && (
+              <div className="absolute top-full left-0 right-0 mt-2 z-20 rounded-2xl border border-white/10 bg-slate-950/95 premium-blur shadow-2xl shadow-black/50 overflow-hidden">
+                {suggestions.map((v) => (
+                  <button
+                    type="button"
+                    key={v}
+                    onClick={() => setSearch(String(v))}
+                    className="w-full text-left px-4 py-3 text-sm text-slate-100 hover:bg-white/5 transition-colors"
+                  >
+                    {v}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           <button className="bg-white/5 p-3 rounded-2xl border border-white/10 text-slate-400">
             <Filter size={20} />
@@ -164,7 +179,7 @@ const AttendanceHistory = () => {
                 <h4 className="font-bold text-sm text-white truncate">{record.student_name}</h4>
                 <div className="flex items-center gap-2">
                     <span className="text-[10px] text-slate-500 uppercase font-bold tracking-widest">{record.roll_no}</span>
-                    <span className="text-[10px] text-slate-400">•</span>
+                    <span className="text-[10px] text-slate-400">-</span>
                     <span className="text-[10px] text-slate-400 font-medium">{record.date} {record.time}</span>
                 </div>
               </div>

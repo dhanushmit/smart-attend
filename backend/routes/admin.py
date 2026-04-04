@@ -11,7 +11,7 @@ import base64
 from utils.face_utils import get_face_embedding, crop_and_zoom_face, embedding_distance, analyze_face, get_engine_name
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Spacer, Paragraph
 
 admin_bp = Blueprint('admin', __name__)
@@ -141,6 +141,9 @@ def _build_pdf_report(rows, filter_type):
     output = io.BytesIO()
     doc = SimpleDocTemplate(output, pagesize=landscape(A4), leftMargin=20, rightMargin=20, topMargin=20, bottomMargin=20)
     styles = getSampleStyleSheet()
+    # Consistent, compact table typography.
+    styles.add(ParagraphStyle(name="CellSmall", parent=styles["BodyText"], fontName="Helvetica", fontSize=8, leading=9))
+    styles.add(ParagraphStyle(name="CellSmallBold", parent=styles["BodyText"], fontName="Helvetica-Bold", fontSize=8, leading=9))
     summary = _attendance_summary(rows)
     export_rows = _export_table_rows(rows)
 
@@ -160,28 +163,45 @@ def _build_pdf_report(rows, filter_type):
     for row in export_rows:
         table_data.append([
             row["S.No"],
-            row["Student Name"],
+            Paragraph(str(row["Student Name"]), styles["CellSmall"]),
             row["Roll No"],
-            row["Class"],
-            row["Advisor"],
+            Paragraph(str(row["Class"]), styles["CellSmall"]),
+            Paragraph(str(row["Advisor"]), styles["CellSmall"]),
             row["Date"],
             row["Time"],
             row["Status"],
             row["Verified"],
         ])
 
-    table = Table(table_data, repeatRows=1, colWidths=[35, 120, 70, 90, 100, 75, 55, 60, 55])
+    # Totals row at the bottom for easier reading on mobile PDF viewers.
+    table_data.append([
+        "",
+        Paragraph("TOTAL", styles["CellSmallBold"]),
+        "",
+        "",
+        "",
+        "",
+        "",
+        Paragraph(f"Present: {summary['present']} / Absent: {summary['absent']}", styles["CellSmallBold"]),
+        Paragraph(f"Verified: {summary['verified']}", styles["CellSmallBold"]),
+    ])
+
+    table = Table(table_data, repeatRows=1, colWidths=[35, 170, 70, 95, 110, 75, 55, 80, 65])
     table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f2937")),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("ALIGN", (1, 1), (1, -1), "LEFT"),
+        ("ALIGN", (3, 1), (4, -1), "LEFT"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#d1d5db")),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f3f4f6")]),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -2), [colors.white, colors.HexColor("#f3f4f6")]),
         ("BOTTOMPADDING", (0, 0), (-1, 0), 10),
         ("TOPPADDING", (0, 0), (-1, 0), 10),
+        ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#e5e7eb")),
+        ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
     ]))
     elements.append(table)
     doc.build(elements)
@@ -776,6 +796,35 @@ def get_attendance_history():
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df.to_excel(writer, index=False, sheet_name='Attendance')
             summary_df.to_excel(writer, index=False, sheet_name='Summary')
+
+            # Apply light formatting for readability.
+            try:
+                wb = writer.book
+                from openpyxl.styles import Font, Alignment
+                from openpyxl.utils import get_column_letter
+
+                for sheet_name in ["Attendance", "Summary"]:
+                    ws = wb[sheet_name]
+                    ws.freeze_panes = "A2"
+                    ws.auto_filter.ref = ws.dimensions
+
+                    header_font = Font(bold=True)
+                    for cell in ws[1]:
+                        cell.font = header_font
+                        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+                    # Auto width (bounded)
+                    for col_idx, col_cells in enumerate(ws.columns, start=1):
+                        max_len = 0
+                        for c in list(col_cells)[:250]:
+                            try:
+                                v = "" if c.value is None else str(c.value)
+                                max_len = max(max_len, len(v))
+                            except Exception:
+                                continue
+                        ws.column_dimensions[get_column_letter(col_idx)].width = min(max(10, max_len + 2), 36)
+            except Exception as xlsx_style_err:
+                print(f"XLSX style warning: {xlsx_style_err}")
         output.seek(0)
         return send_file(
             output,
