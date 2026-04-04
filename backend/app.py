@@ -187,7 +187,25 @@ def index():
 
 @app.route('/healthz')
 def healthz():
-    return {"status": "ok"}, 200
+    # Helps confirm whether the service is running on an external persistent DB.
+    using_external = bool(os.environ.get("DATABASE_URL"))
+    dialect = None
+    try:
+        dialect = db.engine.dialect.name
+    except Exception:
+        dialect = None
+
+    return {
+        "status": "ok",
+        "db": {
+            "dialect": dialect,
+            "using_external_db": using_external,
+            # NOTE: Render free's filesystem is ephemeral across deploys.
+            # Persistence requires DATABASE_URL to an external DB (Postgres).
+            "persistent": using_external and (dialect in ("postgresql", "postgres")),
+        },
+        "face_engine": os.environ.get("FACE_ENGINE") or "opencv",
+    }, 200
 
 # GLOBAL ERROR HANDLER
 @app.errorhandler(Exception)
