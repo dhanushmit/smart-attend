@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from models import db, Attendance, Student, User, Notification, FaceEmbedding
+from models import db, Attendance, AttendanceSession, Student, User, Notification, FaceEmbedding
 import os
 import base64
 import json
@@ -14,13 +14,22 @@ COLLEGE_LON = 80.2707
 
 
 def _student_session_dates(student):
+    try:
+        from utils.session_utils import ensure_finalized_sessions
+        ensure_finalized_sessions()
+    except Exception:
+        pass
+
     if student.class_id:
         session_rows = db.session.query(Attendance.date).join(Student).filter(
             Student.class_id == student.class_id
         ).distinct().all()
     else:
         session_rows = db.session.query(Attendance.date).distinct().all()
-    return sorted({row[0] for row in session_rows if row[0]}, reverse=True)
+
+    attendance_dates = {row[0] for row in session_rows if row[0]}
+    session_dates = {row[0] for row in db.session.query(AttendanceSession.date).distinct().all() if row[0]}
+    return sorted(attendance_dates | session_dates, reverse=True)
 
 
 def _student_history_rows(student, limit=30):

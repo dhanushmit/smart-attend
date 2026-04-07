@@ -241,6 +241,7 @@ def healthz():
             "persistent": using_external and (dialect in ("postgresql", "postgres")),
         },
         "face_engine": os.environ.get("FACE_ENGINE") or "opencv",
+        "timezone": (os.environ.get("APP_TIMEZONE") or "Asia/Kolkata"),
     }, 200
 
 # GLOBAL ERROR HANDLER

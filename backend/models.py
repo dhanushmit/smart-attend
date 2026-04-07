@@ -60,6 +60,14 @@ class Attendance(db.Model):
     
     student = db.relationship('Student', backref='attendance_records')
 
+# Finalized session days.
+# Used to backfill "absent" days when nobody marked attendance at all.
+class AttendanceSession(db.Model):
+    __tablename__ = 'attendance_sessions'
+    id = db.Column(db.Integer, primary_key=True)
+    date = db.Column(db.Date, unique=True, nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
 class Notification(db.Model):
     __tablename__ = 'notifications'
     id = db.Column(db.Integer, primary_key=True)

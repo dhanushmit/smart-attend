@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify, current_app, send_file
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from models import db, User, Student, Attendance, Class, Notification, FaceEmbedding
+from models import db, User, Student, Attendance, AttendanceSession, Class, Notification, FaceEmbedding
 from werkzeug.security import generate_password_hash
 from datetime import datetime, timedelta
 import os
@@ -31,10 +31,23 @@ def _student_photo_url(student):
 
 
 def _all_session_dates(class_id=None):
+    # Ensure finalized days exist (for "nobody marked" days => absent for everyone).
+    try:
+        from utils.session_utils import ensure_finalized_sessions
+        ensure_finalized_sessions()
+    except Exception:
+        pass
+
+    # Attendance dates (days where at least one record exists)
     query = db.session.query(Attendance.date).distinct()
     if class_id:
         query = query.join(Student).filter(Student.class_id == class_id)
-    return sorted({row[0] for row in query.all() if row[0]})
+    attendance_dates = {row[0] for row in query.all() if row[0]}
+
+    # Finalized session dates (days to show absent even when no attendance records exist)
+    session_dates = {row[0] for row in db.session.query(AttendanceSession.date).distinct().all() if row[0]}
+
+    return sorted(attendance_dates | session_dates)
 
 
 def _present_date_count(student_id):

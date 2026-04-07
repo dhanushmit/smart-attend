@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify, send_file
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from models import db, Student, User, Class, Attendance, Notification
+from models import db, Student, User, Class, Attendance, AttendanceSession, Notification
 from werkzeug.security import generate_password_hash
 from datetime import datetime, timedelta
 import io
@@ -27,10 +27,18 @@ def _student_photo_url(student):
 
 
 def _class_session_dates(class_id):
+    try:
+        from utils.session_utils import ensure_finalized_sessions
+        ensure_finalized_sessions()
+    except Exception:
+        pass
+
     rows = db.session.query(Attendance.date).join(Student).filter(
         Student.class_id == class_id
     ).distinct().all()
-    return sorted({row[0] for row in rows if row[0]})
+    attendance_dates = {row[0] for row in rows if row[0]}
+    session_dates = {row[0] for row in db.session.query(AttendanceSession.date).distinct().all() if row[0]}
+    return sorted(attendance_dates | session_dates)
 
 
 def _student_attendance_metrics(student):
