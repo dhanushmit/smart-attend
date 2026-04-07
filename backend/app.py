@@ -151,7 +151,11 @@ with app.app_context():
 
         users = {}
         for username, password, role, fullname, email in defaults:
+            # Idempotent seeding: find by username first, then by email.
+            # This prevents startup crashes when the DB already contains a user with the same email.
             user = User.query.filter_by(username=username).first()
+            if not user and email:
+                user = User.query.filter_by(email=email).first()
             if not user:
                 # Create only if missing. Do NOT overwrite passwords on every restart.
                 user = User(
@@ -166,6 +170,7 @@ with app.app_context():
                 # Fill in any missing fields, but never clobber password changes.
                 user.role = user.role or role
                 user.fullname = user.fullname or fullname
+                # Keep existing email/username if already set to avoid unique collisions.
                 user.email = user.email or email
             users[username] = user
 
