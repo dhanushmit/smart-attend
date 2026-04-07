@@ -201,7 +201,20 @@ with app.app_context():
 
         db.session.commit()
 
-    seed_defaults()
+    # Seeding rules:
+    # - For local dev (SQLite), defaults are useful (seed ON by default).
+    # - For production (external DATABASE_URL), seeding can cause unique conflicts and should be OFF by default.
+    seed_env = (os.environ.get("SEED_DEFAULTS") or "").strip().lower()
+    if seed_env in ("1", "true", "yes", "on"):
+        seed_enabled = True
+    elif seed_env in ("0", "false", "no", "off"):
+        seed_enabled = False
+    else:
+        seed_enabled = not bool(os.environ.get("DATABASE_URL"))  # default: ON only for local SQLite
+
+    print(f"Seed Defaults: enabled={seed_enabled}")
+    if seed_enabled:
+        seed_defaults()
 
 @app.route('/')
 def index():

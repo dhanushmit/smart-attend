@@ -12,5 +12,7 @@ services:
         value: opencv
       - key: JWT_DAYS
         value: "7"
+      - key: SEED_DEFAULTS
+        value: "0"
       - key: PYTHON_VERSION
         value: 3.11.9
